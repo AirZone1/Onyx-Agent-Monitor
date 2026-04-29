@@ -1,0 +1,22 @@
+{
+  "name": "Onyx Agent Monitor",
+  "short_name": "Onyx Monitor",
+  "description": "Mobile monitor for Antigravity agent",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0f",
+  "theme_color": "#6c5ce7",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

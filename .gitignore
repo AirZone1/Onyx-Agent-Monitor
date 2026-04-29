@@ -1,0 +1,10 @@
+node_modules/
+uploads/
+server.log
+server.err.log
+tunnel.log
+tunnel.err.log
+chat-messages.json
+title-cache.json
+cloudflared.exe
+vscode-ext/

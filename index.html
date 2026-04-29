@@ -1,0 +1,2167 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#6c5ce7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Onyx Agent Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg-card: #12121a;
+    --bg-card-hover: #1a1a28;
+    --bg-surface: #16162280;
+    --border: #2a2a3d;
+    --text: #e8e8f0;
+    --text-dim: #8888a0;
+    --text-muted: #555570;
+    --accent: #6c5ce7;
+    --accent-glow: #6c5ce740;
+    --green: #00b894;
+    --green-glow: #00b89440;
+    --red: #e17055;
+    --red-glow: #e1705540;
+    --yellow: #fdcb6e;
+    --blue: #74b9ff;
+    --radius: 14px;
+    --radius-sm: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: 'Assistant', 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Header */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: linear-gradient(135deg, #0a0a0f 0%, #161625 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .header-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .header-title .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 12px var(--green-glow);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  .header-badge {
+    font-size: 11px;
+    background: var(--accent);
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-weight: 500;
+  }
+
+  /* Navigation */
+  .nav {
+    display: flex;
+    gap: 4px;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-btn {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+
+  .nav-btn.active {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 2px 12px var(--accent-glow);
+  }
+
+  .nav-btn:not(.active):active {
+    background: var(--bg-card);
+  }
+
+  /* Main content */
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    padding-bottom: 80px;
+    min-height: 0;
+  }
+
+  /* Conversation list */
+  .conv-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .conv-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 3px;
+    height: 100%;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .conv-card:active, .conv-card.selected {
+    background: var(--bg-card-hover);
+    border-color: var(--accent);
+  }
+
+  .conv-card.selected::before {
+    opacity: 1;
+  }
+
+  .conv-id {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'SF Mono', monospace;
+    margin-bottom: 4px;
+  }
+
+  .conv-time {
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .conv-preview {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.4;
+    margin-top: 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Log viewer */
+  .log-viewer {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  /* Fixed horizontal toolbar pinned to the top of the viewport.
+     position: fixed (not sticky) so it never scrolls away regardless of
+     parent overflow rules. RTL so items lay out right-to-left. */
+  .top-toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 110;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 14px;
+    background: rgba(10, 10, 15, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+    direction: rtl;
+  }
+  .top-toolbar::-webkit-scrollbar { display: none; }
+  .top-toolbar > * { flex-shrink: 0; }
+  /* Hide the legacy header on monitor view — the toolbar replaces it */
+  body:has(#topToolbar) > .header { display: none; }
+
+  .log-toolbar-title {
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .log-toolbar-actions {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .icon-btn {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-dim);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+
+  .icon-btn:active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+
+  .log-content {
+    padding: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    overflow-y: auto;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    color: var(--text-dim);
+    /* unicode-bidi: plaintext makes each paragraph auto-detect its direction
+       from the first strong character. Hebrew lines render RTL, English lines LTR. */
+    unicode-bidi: plaintext;
+  }
+  .log-content > * {
+    /* dir=auto on each line wrapper so individual messages align correctly */
+    unicode-bidi: plaintext;
+    text-align: start;
+  }
+
+  .log-content .line-user {
+    color: var(--blue);
+    border-right: 2px solid var(--blue);
+    padding-right: 8px;
+    margin: 4px 0;
+  }
+
+  .log-content .line-model {
+    color: var(--green);
+    border-right: 2px solid var(--green);
+    padding-right: 8px;
+    margin: 4px 0;
+  }
+
+  .log-content .line-tool {
+    color: var(--green);
+    font-weight: 600;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .log-content .line-tool::before {
+    content: '\2611'; /* Checkbox-like icon */
+    font-size: 14px;
+  }
+
+  .log-content .line-tool-body {
+    background: rgba(0, 255, 65, 0.05);
+    border-left: 2px solid var(--green);
+    padding: 6px 10px;
+    margin: 4px 0 12px 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: 'SF Mono', monospace;
+    white-space: pre-wrap;
+    border-radius: 0 4px 4px 0;
+  }
+
+  .log-content .line-system {
+    color: var(--yellow);
+    font-style: italic;
+    font-size: 11px;
+    margin: 8px 0;
+    text-align: center;
+    opacity: 0.8;
+  }
+
+  /* Approvals */
+  .approval-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 10px;
+    animation: slideIn 0.3s ease-out;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .approval-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .approval-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+
+  .approval-diff {
+    background: #0d0d15;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    font-family: 'SF Mono', monospace;
+    font-size: 11px;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+    direction: ltr;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .diff-add { color: var(--green); }
+  .diff-del { color: var(--red); }
+
+  .approval-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-approve {
+    background: var(--green);
+    color: #000;
+    box-shadow: 0 2px 12px var(--green-glow);
+  }
+
+  .btn-reject {
+    background: var(--red);
+    color: #fff;
+    box-shadow: 0 2px 12px var(--red-glow);
+  }
+
+  .btn:active {
+    transform: scale(0.97);
+  }
+
+  /* Artifacts viewer */
+  .artifact-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+
+  .artifact-header {
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .artifact-header:active {
+    background: var(--bg-card-hover);
+  }
+
+  .artifact-name {
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .artifact-size {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .artifact-body {
+    display: none;
+    padding: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+    direction: ltr;
+    text-align: left;
+    color: var(--text-dim);
+  }
+
+  .artifact-body.open {
+    display: block;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+  }
+
+  .empty-state .emoji {
+    font-size: 48px;
+    margin-bottom: 16px;
+  }
+
+  .empty-state p {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* Auto-refresh indicator — hidden, status shown in header */
+  .refresh-indicator {
+    display: none !important;
+  }
+
+  .refresh-indicator .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Chat bubble styles */
+  .chat-bubble {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: 16px;
+    margin: 4px 0;
+    word-break: break-word;
+    line-height: 1.5;
+    font-size: 13px;
+  }
+
+  .user-bubble {
+    margin-left: auto;
+    background: #3a7bd5;
+    color: #eef4ff;
+    border-bottom-right-radius: 4px;
+  }
+
+  .agent-bubble {
+    margin-right: auto;
+    background: var(--bg-card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+  }
+
+  .bubble-content {
+    white-space: pre-wrap;
+  }
+
+  .bubble-time {
+    font-size: 10px;
+    opacity: 0.6;
+    margin-top: 4px;
+    text-align: right;
+  }
+
+  .tool-line {
+    font-size: 11px;
+    color: #00ff41;
+    padding: 2px 8px;
+    opacity: 0.6;
+    font-family: 'Courier New', monospace;
+  }
+
+  .user-line {
+    padding: 2px 4px;
+    color: #6ab0ff;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .log-text {
+    padding: 2px 4px;
+    font-size: 13px;
+    color: var(--text);
+    white-space: pre-wrap;
+  }
+
+  .log-content {
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .monitor-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+  }
+
+  /* Notification badge */
+  .badge {
+    background: var(--red);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 10px;
+    margin-right: 4px;
+  }
+
+  /* Search bar */
+  .search-bar {
+    margin-bottom: 12px;
+  }
+
+  .search-bar input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .search-bar input:focus {
+    border-color: var(--accent);
+  }
+
+  .search-bar input::placeholder {
+    color: var(--text-muted);
+  }
+
+  /* Monitor (unified live log + chat) */
+  .monitor-container {
+    display: flex;
+    flex-direction: column;
+    margin-top: 64px;
+    /* Fill remaining space: 100vh - toolbar(64) - chat-input(54) */
+    height: calc(100dvh - 64px - 54px);
+    overflow: hidden;
+  }
+
+  #chatInput::-webkit-scrollbar {
+    display: none;
+  }
+  #chatInput {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .chat-bubbles-overlay {
+    display: none !important;
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .chat-bubble {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    animation: slideIn 0.2s ease-out;
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+
+  .chat-bubble.user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: white;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+  }
+
+  .chat-bubble.agent {
+    align-self: flex-start;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-bottom-left-radius: 4px;
+  }
+
+  .chat-bubble .chat-time {
+    font-size: 10px;
+    color: rgba(255,255,255,0.5);
+    margin-top: 4px;
+    display: block;
+  }
+
+  .chat-bubble.agent .chat-time {
+    color: var(--text-muted);
+  }
+
+  .chat-bubble.agent .chat-time::before {
+    content: '🤖 ';
+  }
+
+  .chat-bubble .status-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-inline-start: 4px;
+  }
+
+  .chat-bubble .status-dot.unread {
+    background: var(--yellow);
+  }
+
+  .chat-bubble .status-dot.read {
+    background: var(--green);
+  }
+
+  .chat-input-bar {
+    display: flex;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    flex-wrap: wrap;
+  }
+
+  /* Code actions */
+  .code-actions {
+    position: absolute;
+    bottom: 70px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+  }
+
+  .code-action-btn {
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: transform 0.1s, opacity 0.2s;
+  }
+
+  .code-action-btn:active {
+    transform: scale(0.96);
+  }
+
+  .code-action-btn.accept {
+    background: var(--green);
+    color: #fff;
+  }
+
+  .code-action-btn.reject {
+    background: var(--red);
+    color: #fff;
+  }
+
+  .code-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .chat-input-bar textarea {
+    flex: 1;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    resize: none;
+    max-height: 100px;
+    min-height: 40px;
+    line-height: 1.4;
+    transition: border-color 0.2s;
+  }
+
+  .chat-input-bar textarea:focus {
+    border-color: var(--accent);
+  }
+
+  .chat-input-bar textarea::placeholder {
+    color: var(--text-muted);
+  }
+
+  .chat-attach-btn {
+    width: 42px;
+    height: 42px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    align-self: flex-end;
+    opacity: 0.85;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+
+  .chat-attach-btn:hover { opacity: 1; }
+  .chat-attach-btn:active { transform: scale(0.9); }
+
+  .chat-send-btn {
+    width: 38px;
+    height: 38px;
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    border-radius: 8px;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    flex-shrink: 0;
+    align-self: flex-end;
+  }
+
+  .chat-send-btn:hover {
+    color: #8b7cf7;
+  }
+
+  .chat-send-btn:active {
+    transform: scale(0.9);
+  }
+
+  .chat-send-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .chat-stop-btn {
+    background: transparent;
+    color: var(--red);
+    border: none;
+    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    flex-shrink: 0;
+    align-self: flex-end;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 3px;
+    gap: 4px;
+    transition: all 0.15s;
+    animation: pulse 1.5s infinite;
+  }
+  .chat-stop-btn:active { transform: scale(0.9); opacity: 0.8; }
+
+  .chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+
+  .chat-header-title {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .chat-clear-btn {
+    padding: 4px 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .chat-clear-btn:active {
+    background: var(--red);
+    color: white;
+    border-color: var(--red);
+  }
+
+  .chat-hint {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+
+
+  /* Message queue status */
+  .queue-status {
+    display: none; padding: 6px 12px; background: var(--bg);
+    border-top: 1px solid var(--border); font-size: 12px; color: var(--text-dim);
+    align-items: center; gap: 8px;
+  }
+  .queue-status.visible { display: flex; }
+  .queue-status .q-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-status .q-status { font-size: 11px; font-weight: 600; }
+  .queue-status .q-status.pending { color: var(--yellow); }
+  .queue-status .q-status.sent { color: var(--green); }
+  .queue-status .q-status.failed { color: var(--red); }
+  .queue-status .q-status.cancelled { color: var(--text-muted); text-decoration: line-through; }
+  .queue-cancel-btn {
+    background: var(--red); color: #fff; border: none; border-radius: 6px;
+    padding: 2px 8px; font-size: 11px; cursor: pointer; font-family: inherit;
+    transition: opacity 0.15s;
+  }
+  .queue-cancel-btn:active { opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">
+    <div class="dot" id="statusDot"></div>
+    <span>Agent Monitor</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div class="header-badge" id="connStatus">Connecting...</div>
+    <span style="font-size:10px;color:var(--text-muted);font-weight:500">Made by AirZone</span>
+  </div>
+</div>
+
+<div class="nav" style="display:none"></div>
+
+<div class="content" id="content">
+  <!-- Dynamic content -->
+</div>
+
+<div class="refresh-indicator" id="refreshIndicator" style="display:none">
+  <div class="spinner"></div>
+  <span>Live updates active</span>
+</div>
+
+<script>
+const API = '';
+let currentTab = 'monitor';
+let currentConvId = null;
+let autoRefreshTimer = null;
+let eventSource = null;
+let pendingApprovals = [];
+let chatMessages = [];
+
+// Tab switching
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTab = btn.dataset.tab;
+    render();
+  });
+});
+
+// SSE connection
+function connectSSE() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource(API + '/api/events');
+  
+  eventSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'connected') {
+        document.getElementById('connStatus').textContent = 'Connected';
+        document.getElementById('statusDot').style.background = 'var(--green)';
+      }
+      if (data.type === 'log_update' && (currentTab === 'monitor') && data.convId === currentConvId) {
+        loadLiveLog();
+      }
+      if (data.type === 'new_chat') {
+        if (data.message.role === 'user') {
+          chatMessages.push(data.message);
+          // Messages appear in the log via CDP injection - no separate overlay
+        }  if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      }
+      if (data.type === 'new_approval') {
+        pendingApprovals.push(data.item);
+        updateApprovalBadge();
+        if (currentTab === 'approvals') render();
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      }
+      if (data.type === 'approval_resolved') {
+        pendingApprovals = pendingApprovals.filter(a => a.id !== data.id);
+        updateApprovalBadge();
+        if (currentTab === 'approvals') render();
+      }
+      if (data.type === 'queue_update' && data.queue) {
+        updateQueueUI(data.queue);
+      }
+    } catch {}
+  };
+
+  eventSource.onerror = () => {
+    document.getElementById('connStatus').textContent = 'Reconnecting...';
+    document.getElementById('statusDot').style.background = 'var(--red)';
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+function updateApprovalBadge() {
+  const badge = document.getElementById('approvalBadge');
+  const count = pendingApprovals.length;
+  badge.style.display = count > 0 ? 'inline' : 'none';
+  badge.textContent = count;
+}
+
+// API calls
+async function fetchJSON(url) {
+  const res = await fetch(API + url);
+  return res.json();
+}
+
+async function fetchText(url) {
+  const res = await fetch(API + url);
+  return res.text();
+}
+
+// Render
+async function render() {
+  const content = document.getElementById('content');
+  const indicator = document.getElementById('refreshIndicator');
+  
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+  indicator.style.display = 'none';
+
+  switch (currentTab) {
+    case 'monitor':
+      await renderMonitor(content);
+      break;
+    case 'conversations':
+      await renderConversations(content);
+      break;
+    case 'artifacts':
+      await renderArtifacts(content);
+      break;
+    case 'approvals':
+      renderApprovals(content);
+      break;
+  }
+}
+
+async function renderConversations(el) {
+  const convs = await fetchJSON('/api/conversations');
+  
+  if (convs.length === 0) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="emoji">📭</div>
+        <p>No conversations found.<br>Start a chat with the agent!</p>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="search-bar">
+      <input type="text" placeholder="🔍 Search conversations..." id="convSearch">
+    </div>
+    <div id="convList">${convs.map(c => renderConvCard(c)).join('')}</div>
+  `;
+
+  document.getElementById('convSearch').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll('.conv-card').forEach(card => {
+      card.style.display = card.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+
+  document.querySelectorAll('.conv-card').forEach(card => {
+    card.addEventListener('click', () => {
+      currentConvId = card.dataset.id;
+      document.querySelectorAll('.conv-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      // Switch to monitor view
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector('[data-tab="monitor"]').classList.add('active');
+      currentTab = 'monitor';
+      // Sync with Antigravity — extract English keywords for picker search
+      const rawPreview = card.querySelector('.conv-preview')?.textContent || '';
+      const rawTitle = card.querySelector('[style*="font-weight:600"]')?.textContent || '';
+      // Extract English words only (picker titles are in English)
+      const englishWords = (rawPreview + ' ' + rawTitle).match(/[a-zA-Z]{3,}/g) || [];
+      const cardTitle = englishWords.slice(0, 5).join(' ') || rawPreview.substring(0, 30);
+      // Prevent auto-sync from reverting for 10s
+      window._skipConvSync = true;
+      setTimeout(() => { window._skipConvSync = false; }, 10000);
+      fetch(API + `/api/conversation/${currentConvId}/watch`);
+      fetch(API + '/api/conversation/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ convId: currentConvId, preview: cardTitle })
+      }).then(() => {
+        // Immediate polling after switch — no waiting for next 5s cycle
+        setTimeout(() => { loadLiveLog(); checkAgentActivity(); checkModelStatus(); }, 500);
+        setTimeout(() => { loadLiveLog(); }, 2000);
+        setTimeout(() => { loadLiveLog(); }, 4000);
+      }).catch(() => {});
+      render();
+    });
+  });
+}
+
+function renderConvCard(c) {
+  const timeStr = c.lastMod ? new Date(c.lastMod).toLocaleString('he-IL', { 
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
+  }) : '';
+  const shortId = c.id.substring(0, 8);
+  const title = c.title || '';
+  return `
+    <div class="conv-card ${c.id === currentConvId ? 'selected' : ''}" data-id="${c.id}">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="conv-id">${shortId}...</span>
+        <span class="conv-time">${timeStr}</span>
+      </div>
+      ${title ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin:4px 0">${escapeHTML(title)}</div>` : ''}
+      <div class="conv-preview">${escapeHTML(c.preview || 'No preview')}</div>
+    </div>`;
+}
+
+async function renderMonitor(el) {
+  if (!currentConvId) {
+    const convs = await fetchJSON('/api/conversations');
+    if (convs.length > 0) currentConvId = convs[0].id;
+    else {
+      el.innerHTML = `<div class="empty-state"><div class="emoji">📡</div><p>Select a conversation first</p></div>`;
+      return;
+    }
+  }
+
+  // Load chat messages
+  try {
+    const data = await fetchJSON('/api/chat/messages');
+    chatMessages = data.messages || [];
+  } catch {}
+
+  el.innerHTML = `
+    <div class="top-toolbar" id="topToolbar">
+      <div id="statusDotMirror" class="dot" style="width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green-glow);flex-shrink:0;cursor:pointer" title="Disconnect / Shut down"></div>
+      <span id="tunnelIndicator" style="display:inline-block;font-size:13px;cursor:pointer;transition:all 0.3s;opacity:0.5" title="Tunnel inactive">🌐</span>
+      <select id="convSelector" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px;font-family:inherit;max-width:170px;height:28px;outline:none;flex:1">
+        <option value="">Loading...</option>
+      </select>
+      <button class="icon-btn" id="btnArtifacts" title="Artifacts" style="position:relative">📄<span id="artCount" style="position:absolute;top:-5px;right:-5px;background:var(--accent);color:#fff;font-size:9px;border-radius:50%;width:14px;height:14px;display:none;align-items:center;justify-content:center"></span></button>
+      <button class="icon-btn" id="btnBottom" title="Scroll to bottom">⬇️</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;padding-inline-end:4px;line-height:1.1;margin-left:8px">
+        <span style="font-size:15px; font-weight:800; color:var(--text-muted); letter-spacing:-0.5px;">OnyxAM</span>
+        <span style="font-size:8px; font-weight:500; color:var(--text-dim); opacity:0.6;">Made by AirZone</span>
+      </div>
+    </div>
+
+    <div class="monitor-container">
+      <div class="queue-status" id="queueStatus" style="display:none">
+        <div class="q-text" id="qText"></div>
+        <div class="q-status" id="qState"></div>
+        <button class="queue-cancel-btn" id="queueCancel">Cancel</button>
+      </div>
+      
+      <div class="log-viewer" style="flex:1;display:flex;flex-direction:column;border-radius:var(--radius);position:relative;">
+        <div class="code-actions" id="codeActions" style="display:none">
+          <button class="code-action-btn reject" id="btnReject" title="Reject All">❌</button>
+          <button class="code-action-btn accept" id="btnAccept" title="Accept All">✅</button>
+        </div>
+        <div class="log-content" id="logContent" style="flex:1;min-height:0" dir="auto">Loading...</div>
+      </div>
+    </div>
+    <div class="chat-input-bar" style="direction: ltr;">
+      <div style="position:relative; display:flex; align-items:center; justify-content:center; width:28px; height:42px; flex-shrink:0; align-self:flex-end;">
+        <div id="modelIconDisplay" style="font-size:18px; pointer-events:none; opacity:0.8">🤖</div>
+        <select id="modelSelectorBottom" style="position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer; -webkit-appearance:none; appearance:none;">
+          <option value="">Agent</option>
+        </select>
+      </div>
+      <label class="chat-attach-btn" id="btnAttach" title="Attach image" style="width:32px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+        <input type="file" id="imageInput" accept="image/*" style="display:none">
+      </label>
+      <textarea id="chatInput" rows="1" placeholder="💬 Send message..." dir="auto"></textarea>
+      <button class="chat-send-btn" id="chatSend"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+      <button class="chat-stop-btn" id="btnStop" title="Stop Agent" style="display:none"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+    </div>`;
+
+  // Watch this conversation
+  fetch(API + `/api/conversation/${currentConvId}/watch`);
+  
+  await loadLiveLog();
+  loadModels();
+
+  // Populate conversation dropdown
+  try {
+    const convs = await fetchJSON('/api/conversations');
+    const sel = document.getElementById('convSelector');
+    sel.innerHTML = convs.map(c => {
+      const short = c.id.substring(0, 8);
+      const time = c.lastMod ? new Date(c.lastMod).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+      const preview = (c.preview || '').substring(0, 30);
+      return `<option value="${c.id}" ${c.id === currentConvId ? 'selected' : ''}>${time} — ${preview || short}</option>`;
+    }).join('');
+    sel.addEventListener('change', () => {
+      currentConvId = sel.value;
+      const selectedText = sel.options[sel.selectedIndex]?.text || '';
+      fetch(API + `/api/conversation/${currentConvId}/watch`);
+      loadLiveLog();
+      updateArtifactCount();
+      // Switch in Antigravity too
+      fetch(API + '/api/conversation/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ convId: currentConvId, preview: selectedText })
+      }).catch(() => {});
+    });
+  } catch {}
+
+
+  const btnStopServer = document.getElementById('btnStopServer');
+  if (btnStopServer) {
+    btnStopServer.addEventListener('click', async () => {
+      if (confirm('Are you sure you want to shut down the Mobile Monitor Server?')) {
+        try {
+          await fetchJSON('/api/server/stop', { method: 'POST' });
+          document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100dvh;color:var(--red);font-size:20px;flex-direction:column;gap:12px;"><span>🛑 Server Stopped</span><span style="font-size:14px;color:var(--text-dim)">You can close this tab</span></div>';
+        } catch {}
+      }
+    });
+  }
+
+
+  // Model selector
+  function updateModelIcon(label) {
+    const d = document.getElementById('modelIconDisplay');
+    if (!d) return;
+    const icon = getIconForLabel(label);
+    
+    d.innerHTML = icon;
+    d.title = label || 'Agent';
+    
+    window.currentAgentName = label || 'Agent';
+    window.currentAgentIcon = icon;
+  }
+
+  async function loadModels() {
+    try {
+      const data = await fetchJSON('/api/agent/models');
+      const sels = document.querySelectorAll('#modelSelectorBottom');
+      if (data.ok && data.models && data.models.length > 0) {
+        const html = data.models.map(m => 
+          `<option value="${m.value}" ${m.value === data.current ? 'selected' : ''}>${m.label}</option>`
+        ).join('');
+        sels.forEach(s => s.innerHTML = html);
+        const activeLabel = data.models.find(m => m.value === data.current)?.label || data.current;
+        updateModelIcon(activeLabel);
+      } else if (data.ok && data.current) {
+        sels.forEach(s => s.innerHTML = `<option value="" selected>${data.current}</option>`);
+        updateModelIcon(data.current);
+      } else {
+        sels.forEach(s => s.innerHTML = '<option value="">N/A</option>');
+      }
+    } catch {
+      document.querySelectorAll('#modelSelectorBottom').forEach(s => s.innerHTML = '<option value="">N/A</option>');
+    }
+  }
+  
+  document.querySelectorAll('#modelSelectorBottom').forEach(sel => {
+    sel.addEventListener('change', async (e) => {
+      if (!e.target.value) return;
+      const opt = Array.from(e.target.options).find(o => o.value === e.target.value);
+      updateModelIcon(opt ? opt.text : '');
+      document.querySelectorAll('#modelSelectorBottom').forEach(s => { if(s !== e.target) s.value = e.target.value; });
+      try {
+        await fetch(API + '/api/agent/model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: e.target.value })
+        });
+      } catch {}
+    });
+  });
+
+  // Queue cancel
+  document.getElementById('queueCancel').addEventListener('click', async () => {
+    const lastPending = window._lastQueueId;
+    if (lastPending) {
+      await fetch(API + '/api/chat/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: lastPending })
+      });
+    }
+  });
+
+  // Artifacts button (in side panel)
+  updateArtifactCount();
+  document.getElementById('btnArtifacts').addEventListener('click', async () => {
+    const arts = await fetchJSON(`/api/conversation/${currentConvId}/artifacts`);
+    if (arts.length === 0) {
+      alert('No artifacts in this conversation');
+      return;
+    }
+    // Show artifacts in a modal-like overlay
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:200;overflow-y:auto;padding:16px';
+    overlay.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-size:16px;font-weight:600">📄 Artifacts (${arts.length})</span>
+        <div style="display:flex;gap:8px">
+          <button id="purgeArtOverlay" style="background:var(--bg-card);color:var(--text-dim);border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer;font-family:inherit;font-size:12px">🗑️ Purge</button>
+          <button id="closeArtOverlay" style="background:var(--red);color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-family:inherit">✕ Close</button>
+        </div>
+      </div>
+      ${arts.map((a, i) => `
+        <div class="artifact-card">
+          <div class="artifact-header" data-idx="${i}">
+            <span class="artifact-name">📄 ${escapeHTML(a.name)}</span>
+            <span class="artifact-size">${(a.size / 1024).toFixed(1)} KB</span>
+          </div>
+          <div class="artifact-body" id="artModal-${i}">${escapeHTML(a.content)}</div>
+        </div>
+      `).join('')}
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#closeArtOverlay').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#purgeArtOverlay').addEventListener('click', async () => {
+      const days = prompt('Delete artifacts older than how many days?', '7');
+      if (!days || isNaN(parseInt(days))) return;
+      if (!confirm(`Delete all artifacts older than ${days} days?`)) return;
+      try {
+        const r = await fetch(API + `/api/conversation/${currentConvId}/artifacts/purge`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ olderThanDays: parseInt(days) })
+        });
+        const d = await r.json();
+        alert(d.ok ? `Deleted ${d.deleted} files (${d.freedKB} KB freed)` : `Error: ${d.error}`);
+        updateArtifactCount();
+        overlay.remove();
+      } catch (e) { alert('Error: ' + e.message); }
+    });
+    overlay.querySelectorAll('.artifact-header').forEach(h => {
+      h.addEventListener('click', () => {
+        document.getElementById('artModal-' + h.dataset.idx).classList.toggle('open');
+      });
+    });
+  });
+
+  document.getElementById('btnBottom').addEventListener('click', scrollLogToBottom);
+
+  document.getElementById('statusDotMirror').addEventListener('click', (e) => {
+    // Remove existing menu if open
+    const existing = document.getElementById('serverMenu');
+    if (existing) { existing.remove(); return; }
+    
+    const menu = document.createElement('div');
+    menu.id = 'serverMenu';
+    menu.style.cssText = 'position:fixed;top:50px;left:12px;z-index:300;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:6px;box-shadow:0 8px 32px rgba(0,0,0,0.6);min-width:160px;animation:fadeIn 0.15s ease';
+    menu.innerHTML = `
+      <button id="menuSoftReset" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:transparent;color:var(--text);font-size:13px;font-family:inherit;border-radius:8px;cursor:pointer;text-align:left">🔄 Soft Reset</button>
+      <button id="menuHardRestart" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:transparent;color:var(--yellow, #ffb347);font-size:13px;font-family:inherit;border-radius:8px;cursor:pointer;text-align:left">⚡ Hard Restart</button>
+      <div style="height:1px;background:var(--border);margin:2px 8px"></div>
+      <button id="menuShutdown" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:transparent;color:var(--red);font-size:13px;font-family:inherit;border-radius:8px;cursor:pointer;text-align:left">🛑 Shut Down</button>
+    `;
+    document.body.appendChild(menu);
+    
+    // Close on outside tap
+    const closeMenu = (ev) => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', closeMenu); } };
+    setTimeout(() => document.addEventListener('click', closeMenu), 10);
+    
+    menu.querySelector('#menuSoftReset').addEventListener('click', async () => {
+      menu.remove();
+      try {
+        await fetchJSON('/api/server/restart', { method: 'POST' });
+        location.reload();
+      } catch { location.reload(); }
+    });
+
+    menu.querySelector('#menuHardRestart').addEventListener('click', async () => {
+      menu.remove();
+      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100dvh;color:var(--accent);font-size:20px;flex-direction:column;gap:12px;"><span>⚡ Restarting Server...</span><span style="font-size:14px;color:var(--text-dim)">Reconnecting in 3 seconds</span></div>';
+      try { await fetchJSON('/api/server/hard-restart', { method: 'POST' }); } catch {}
+      // Wait for the new process to start, then reload
+      setTimeout(() => {
+        const tryReload = () => {
+          fetch(API + '/api/agent/status').then(() => location.reload()).catch(() => setTimeout(tryReload, 1000));
+        };
+        tryReload();
+      }, 3000);
+    });
+    
+    menu.querySelector('#menuShutdown').addEventListener('click', async () => {
+      menu.remove();
+      if (confirm('Shut down the Mobile Monitor Server?')) {
+        try {
+          await fetchJSON('/api/server/stop', { method: 'POST' });
+          document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100dvh;color:var(--red);font-size:20px;flex-direction:column;gap:12px;"><span>🛑 Server Stopped</span><span style="font-size:14px;color:var(--text-dim)">You can close this tab</span></div>';
+        } catch {}
+      }
+    });
+  });
+
+  // Purge is now inside the Artifacts overlay
+
+  // Accept/Reject via CDP
+  document.getElementById('btnAccept').addEventListener('click', async () => {
+    const btn = document.getElementById('btnAccept');
+    btn.disabled = true;
+    try {
+      const res = await fetch(API + '/api/code/accept-cdp', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) { if (navigator.vibrate) navigator.vibrate(100); btn.textContent = '✓'; }
+      else btn.textContent = '⚠️';
+    } catch { btn.textContent = '⚠️'; }
+    setTimeout(() => { btn.textContent = '✅'; btn.disabled = false; }, 2000);
+  });
+
+  document.getElementById('btnReject').addEventListener('click', async () => {
+    if (!confirm('Reject all changes?')) return;
+    const btn = document.getElementById('btnReject');
+    btn.disabled = true;
+    try {
+      const res = await fetch(API + '/api/code/reject-cdp', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) { if (navigator.vibrate) navigator.vibrate([100, 50, 100]); btn.textContent = '✓'; }
+      else btn.textContent = '⚠️';
+    } catch { btn.textContent = '⚠️'; }
+    setTimeout(() => { btn.textContent = '❌'; btn.disabled = false; }, 2000);
+  });
+
+  // Stop agent
+  document.getElementById('btnStop').addEventListener('click', async () => {
+    const btn = document.getElementById('btnStop');
+    btn.disabled = true;
+    try {
+      const res = await fetch(API + '/api/agent/stop', { method: 'POST' });
+      const data = await res.json();
+      btn.textContent = data.ok ? '✓' : '⚠️';
+      if (navigator.vibrate) navigator.vibrate(100);
+    } catch { btn.textContent = '⚠️'; }
+    setTimeout(() => { btn.textContent = '⏹'; btn.disabled = false; }, 2000);
+  });
+
+  // Tunnel toggle - show modal dialog
+  const tunnelBtn = document.getElementById('tunnelIndicator');
+  tunnelBtn.addEventListener('click', async () => {
+    tunnelBtn.disabled = true;
+    try {
+      const status = await fetchJSON('/api/tunnel/status');
+      // Build modal overlay
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px';
+      const modal = document.createElement('div');
+      modal.style.cssText = 'background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;text-align:center';
+      modal.innerHTML = `
+        <div style="font-size:18px;margin-bottom:12px">🌐 Tunnel</div>
+        <div id="tunnelStatus" style="font-size:13px;color:var(--text-dim);margin-bottom:16px">
+          ${status.running ? '✅ Active: <span style="color:var(--accent);word-break:break-all">' + (status.url || 'loading...') + '</span>' : '⚪ Not running'}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${status.running && status.url ? '<button id="tunnelCopy" style="padding:12px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer">📋 Copy URL</button>' : ''}
+          ${status.running ? '<button id="tunnelStop" style="padding:12px;border:none;border-radius:10px;background:var(--red);color:#fff;font-size:14px;font-weight:600;cursor:pointer">🛑 Stop Tunnel</button>' : ''}
+          ${!status.running ? '<button id="tunnelStart" style="padding:12px;border:none;border-radius:10px;background:var(--green);color:#fff;font-size:14px;font-weight:600;cursor:pointer">🚀 Start Tunnel</button>' : ''}
+          <button id="tunnelClose" style="padding:10px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--text-dim);font-size:13px;cursor:pointer">Close</button>
+        </div>
+      `;
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      overlay.querySelector('#tunnelClose').addEventListener('click', () => overlay.remove());
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+      if (overlay.querySelector('#tunnelCopy')) {
+        overlay.querySelector('#tunnelCopy').addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(status.url); } catch {}
+          if (navigator.vibrate) navigator.vibrate(50);
+          overlay.querySelector('#tunnelCopy').textContent = '✅ Copied!';
+          setTimeout(() => overlay.remove(), 800);
+        });
+      }
+      if (overlay.querySelector('#tunnelStop')) {
+        overlay.querySelector('#tunnelStop').addEventListener('click', async () => {
+          await fetch(API + '/api/tunnel/stop', { method: 'POST' });
+          tunnelBtn.style.opacity = '0.5';
+          overlay.remove();
+        });
+      }
+      if (overlay.querySelector('#tunnelStart')) {
+        overlay.querySelector('#tunnelStart').addEventListener('click', async () => {
+          overlay.querySelector('#tunnelStart').textContent = '⏳ Starting...';
+          overlay.querySelector('#tunnelStart').disabled = true;
+          const res = await fetch(API + '/api/tunnel/start', { method: 'POST' });
+          const data = await res.json();
+          tunnelBtn.style.opacity = '1';
+          if (data.url) {
+            overlay.querySelector('#tunnelStatus').innerHTML = '✅ Active: <span style="color:var(--accent);word-break:break-all">' + data.url + '</span>';
+            overlay.querySelector('#tunnelStart').textContent = '📋 Copy URL';
+            overlay.querySelector('#tunnelStart').disabled = false;
+            overlay.querySelector('#tunnelStart').onclick = async () => {
+              try { await navigator.clipboard.writeText(data.url); } catch {}
+              if (navigator.vibrate) navigator.vibrate(50);
+              overlay.querySelector('#tunnelStart').textContent = '✅ Copied!';
+              setTimeout(() => overlay.remove(), 800);
+            };
+          } else {
+            overlay.querySelector('#tunnelStart').textContent = '⚠️ No URL yet';
+          }
+        });
+      }
+    } catch {}
+    tunnelBtn.disabled = false;
+  });
+  // Check initial tunnel status
+  fetchJSON('/api/tunnel/status').then(s => {
+    if (s.running) { tunnelBtn.style.opacity = '1'; tunnelBtn.title = s.url || 'Tunnel running'; }
+  }).catch(() => {});
+
+  // Image upload
+  document.getElementById('imageInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const formData = new FormData();
+    formData.append('image', file);
+    const text = document.getElementById('chatInput').value.trim();
+    if (text) formData.append('text', text);
+    
+    try {
+      const res = await fetch(API + '/api/chat/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.ok) {
+        document.getElementById('chatInput').value = '';
+        if (navigator.vibrate) navigator.vibrate(100);
+      }
+    } catch (err) {
+      alert('Upload failed: ' + err.message);
+    }
+    e.target.value = ''; // Reset file input
+  });
+
+  // Chat input
+  const input = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('chatSend');
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+
+  // Paste image from clipboard (Snipping Tool, Copy, etc.)
+  input.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+        
+        // Store pasted image for sending
+        window._pastedImage = file;
+        
+        // Show preview
+        let preview = document.getElementById('pastePreview');
+        if (!preview) {
+          preview = document.createElement('div');
+          preview.id = 'pastePreview';
+          preview.style.cssText = 'position:absolute;bottom:100%;left:8px;right:8px;padding:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px 12px 0 0;display:flex;align-items:center;gap:8px;z-index:10';
+          input.parentElement.style.position = 'relative';
+          input.parentElement.appendChild(preview);
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          preview.innerHTML = `
+            <img src="${ev.target.result}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">
+            <span style="flex:1;font-size:12px;color:var(--text-muted)">📎 Image pasted</span>
+            <button onclick="window._pastedImage=null;this.parentElement.remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer">✕</button>
+          `;
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+    }
+  });
+
+  sendBtn.addEventListener('click', sendChatMessage);
+
+  // Auto-refresh every 5s (also updates artifact count + pending changes)
+  autoRefreshTimer = setInterval(() => {
+    loadLiveLog();
+    updateArtifactCount();
+    checkPendingChanges();
+    checkAgentActivity();
+    checkTunnelStatus();
+    checkModelStatus();
+    checkActiveConversation();
+    checkToolApprovals();
+  }, 5000);
+  checkPendingChanges(); // initial check
+  checkAgentActivity(); // initial check
+  checkTunnelStatus(); // initial check
+  checkToolApprovals(); // initial check
+  document.getElementById('refreshIndicator').style.display = 'flex';
+}
+
+async function updateArtifactCount() {
+  if (!currentConvId) return;
+  try {
+    const arts = await fetchJSON(`/api/conversation/${currentConvId}/artifacts`);
+    const badge = document.getElementById('artCount');
+    if (badge && arts.length > 0) {
+      badge.textContent = arts.length;
+      badge.style.display = 'flex';
+    } else if (badge) {
+      badge.style.display = 'none';
+    }
+  } catch {}
+}
+
+async function checkPendingChanges() {
+  try {
+    const data = await fetchJSON('/api/code/pending');
+    const acceptBtn = document.getElementById('btnAccept');
+    const rejectBtn = document.getElementById('btnReject');
+    let banner = document.getElementById('pendingBanner');
+    if (data.pending) {
+      acceptBtn.style.animation = 'pulse 1.5s infinite';
+      rejectBtn.style.animation = 'pulse 1.5s infinite';
+      acceptBtn.style.background = 'rgba(76, 175, 80, 0.3)';
+      rejectBtn.style.background = 'rgba(244, 67, 54, 0.3)';
+      // Show banner
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'pendingBanner';
+        banner.style.cssText = 'position:fixed;bottom:54px;left:8px;right:8px;z-index:100;background:linear-gradient(135deg,#1a3a2a,#1a2a3a);border:1px solid var(--green);border-radius:12px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5)';
+        document.body.appendChild(banner);
+      }
+      const fileCount = data.editedFiles || '?';
+      banner.innerHTML = `
+        <span style="font-size:13px;color:var(--text)">📝 <b>${fileCount} files</b> changed</span>
+        <div style="display:flex;gap:6px">
+          <button onclick="document.getElementById('btnAccept').click();document.getElementById('pendingBanner')?.remove()" style="padding:6px 14px;border:none;border-radius:8px;background:var(--green);color:#fff;font-size:12px;font-weight:600;cursor:pointer">✅ Accept</button>
+          <button onclick="document.getElementById('btnReject').click();document.getElementById('pendingBanner')?.remove()" style="padding:6px 14px;border:none;border-radius:8px;background:var(--red);color:#fff;font-size:12px;font-weight:600;cursor:pointer">❌ Reject</button>
+        </div>`;
+    } else {
+      acceptBtn.style.animation = '';
+      rejectBtn.style.animation = '';
+      acceptBtn.style.background = '';
+      rejectBtn.style.background = '';
+      if (banner) banner.remove();
+    }
+  } catch {}
+}
+
+async function checkAgentActivity() {
+  try {
+    const data = await fetchJSON('/api/agent/status');
+    const stopBtn = document.getElementById('btnStop');
+    if (stopBtn) {
+      stopBtn.style.display = data.working ? '' : 'none';
+    }
+  } catch {}
+}
+
+async function checkTunnelStatus() {
+  try {
+    const data = await fetchJSON('/api/tunnel/status');
+    const indicator = document.getElementById('tunnelIndicator');
+    if (indicator) {
+      indicator.style.display = 'inline-block';
+      if (data.running) {
+        indicator.style.filter = 'drop-shadow(0 0 4px #00ff88)';
+        indicator.title = data.url ? `Tunnel: ${data.url}` : 'Tunnel active';
+        indicator.style.opacity = '1';
+      } else {
+        indicator.style.filter = 'none';
+        indicator.title = 'Tunnel inactive';
+        indicator.style.opacity = '0.5';
+      }
+    }
+  } catch {}
+}
+
+// Detect and show tool approval requests (Browser, Command, etc.)
+async function checkToolApprovals() {
+  try {
+    const data = await fetchJSON('/api/agent/approvals');
+    let banner = document.getElementById('approvalBanner');
+    if (data.pending) {
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'approvalBanner';
+        banner.style.cssText = 'position:fixed;top:52px;left:8px;right:8px;z-index:200;background:linear-gradient(135deg,#1a2040,#2a1a40);border:1px solid #7c6cff;border-radius:12px;padding:12px 14px;box-shadow:0 4px 24px rgba(100,80,255,0.3);animation:slideDown 0.3s ease';
+        document.body.appendChild(banner);
+      }
+      const toolIcon = data.toolName === 'Browser' ? '🌐' : data.toolName === 'Command' ? '⚡' : '🔧';
+      const btns = (data.buttons || []).map(b => {
+        let color = '#3a3a5a'; let textColor = '#ccc';
+        if (b === 'Allow' || b === 'Always Allow' || b === 'Run' || b === 'Continue') { color = '#2d5a2d'; textColor = '#8f8'; }
+        else if (b === "Don't Allow" || b === 'Deny' || b === 'Skip') { color = '#5a2d2d'; textColor = '#f88'; }
+        return `<button onclick="approveAction('${b.replace(/'/g, "\\'")}')" style="padding:6px 12px;border:none;border-radius:8px;background:${color};color:${textColor};font-size:12px;font-weight:600;cursor:pointer">${b}</button>`;
+      }).join('');
+      banner.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:20px">${toolIcon}</span>
+          <span style="font-size:13px;color:#ddd;font-weight:600">${data.toolName} needs approval</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${btns}</div>`;
+    } else {
+      if (banner) banner.remove();
+    }
+  } catch {}
+}
+
+async function approveAction(action) {
+  const banner = document.getElementById('approvalBanner');
+  if (banner) banner.innerHTML = '<span style="color:#aaa;font-size:12px">⏳ Processing...</span>';
+  try {
+    await fetch(API + '/api/agent/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action })
+    });
+  } catch {}
+  setTimeout(() => { const b = document.getElementById('approvalBanner'); if (b) b.remove(); }, 1000);
+}
+
+async function checkModelStatus() {
+  try {
+    const data = await fetchJSON('/api/agent/models');
+    if (data.ok && data.current) {
+      const sels = document.querySelectorAll('#modelSelectorBottom');
+      
+      // Update dropdown options if models list is available
+      if (data.models && data.models.length > 0) {
+        const currentOptions = sels[0]?.innerHTML || '';
+        const newHtml = data.models.map(m => 
+          `<option value="${m.value}" ${m.value === data.current ? 'selected' : ''}>${m.label}</option>`
+        ).join('');
+        // Only update if options changed
+        if (!currentOptions.includes(data.models[0].label) || currentOptions.includes('N/A')) {
+          sels.forEach(s => s.innerHTML = newHtml);
+        }
+      }
+      
+      // Sync current selection
+      const activeLabel = (data.models && data.models.length > 0) 
+        ? (data.models.find(m => m.value === data.current)?.label || data.current)
+        : data.current;
+        
+      if (activeLabel !== window.currentAgentName) {
+        updateModelIcon(activeLabel);
+        sels.forEach(s => s.value = data.current);
+      }
+    }
+  } catch {}
+}
+
+// Detect conversation changes from Antigravity side
+async function checkActiveConversation() {
+  if (window._skipConvSync) return; // Skip if user just switched manually
+  try {
+    const data = await fetchJSON('/api/agent/active-conversation');
+    if (data.ok && data.convId && data.convId !== currentConvId) {
+      // Antigravity switched to a different conversation
+      currentConvId = data.convId;
+      fetch(API + `/api/conversation/${currentConvId}/watch`);
+      
+      // Update dropdown if it exists
+      const sel = document.getElementById('convSelector');
+      if (sel) sel.value = currentConvId;
+      
+      // Update card selection if on conversations tab
+      document.querySelectorAll('.conv-card').forEach(c => {
+        c.classList.toggle('selected', c.dataset.id === currentConvId);
+      });
+      
+      // Reload the log for the new conversation
+      loadLiveLog();
+      updateArtifactCount();
+    }
+  } catch {}
+}
+
+async function renderLive(el) {
+  // Redirect to monitor
+  currentTab = 'monitor';
+  await renderMonitor(el);
+}
+
+async function loadLiveLog() {
+  if (!currentConvId) return;
+  try {
+    const log = await fetchText(`/api/conversation/${currentConvId}/log?lines=150`);
+    window._lastLogText = log;
+    const logEl = document.getElementById('logContent');
+    if (logEl) {
+      const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 50;
+      const html = formatLog(log);
+      const hash = html.length + '_' + log.length;
+      if (logEl._lastHash !== hash) {
+        logEl._lastHash = hash;
+        logEl.innerHTML = html;
+        if (wasAtBottom) scrollLogToBottom();
+      }
+    }
+  } catch {}
+}
+
+function getIconForLabel(label) {
+  const l = (label || '').toLowerCase();
+  const svgGemini = `<svg viewBox="0 0 24 24" width="18" height="18"><path fill="#1a73e8" d="M12 0c0 5.5-4.5 10-10 10 5.5 0 10 4.5 10 10 0-5.5 4.5-10 10-10-5.5 0-10-4.5-10-10z"/><path fill="#8ab4f8" d="M12 0C12 5.5 7.5 10 2 10C7.5 10 12 5.5 12 0z"/></svg>`;
+  const svgOpenAI = `<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="12" fill="#000"/><path d="M12.5 3.5c1.4 0 2.7.7 3.5 1.8l.1.2c.7 1.2.8 2.6.3 3.8 1.3.5 2.3 1.5 2.8 2.8.5 1.4.4 2.9-.3 4.1.1 1.4-.4 2.7-1.4 3.7-1.2 1.2-3 1.6-4.6 1.1-0.8 1.1-2.1 1.8-3.5 1.8-1.4 0-2.7-.7-3.5-1.8-.1-.1-.1-.2-.2-.3-.6-1.2-.7-2.5-.2-3.7-1.3-.5-2.3-1.5-2.8-2.8-.5-1.4-.4-2.9.3-4.1-.1-1.4.4-2.8 1.4-3.7 1.2-1.2 3-1.7 4.6-1.1.9-1.2 2.2-1.8 3.5-1.8z" fill="none" stroke="#fff" stroke-width="1.2"/><path d="M8.5 14.5l3.5-5 3.5 5M12 9.5v8M7.5 12h9" fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const svgClaude = `<svg viewBox="0 0 24 24" width="18" height="18"><rect width="24" height="24" rx="4" fill="#d97757"/><g transform="translate(12,12)"><line x1="0" y1="-6" x2="0" y2="6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="-6" y1="0" x2="6" y2="0" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="-4.2" y1="-4.2" x2="4.2" y2="4.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="4.2" y1="-4.2" x2="-4.2" y2="4.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="-2.3" y1="-5.5" x2="2.3" y2="5.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><line x1="2.3" y1="-5.5" x2="-2.3" y2="5.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><line x1="-5.5" y1="-2.3" x2="5.5" y2="2.3" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><line x1="5.5" y1="-2.3" x2="-5.5" y2="2.3" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></g></svg>`;
+  
+  if (l.includes('gemini')) return svgGemini;
+  if (l.includes('claude') || l.includes('sonnet') || l.includes('opus')) return svgClaude;
+  if (l.includes('gpt') || l.includes('o1') || l.includes('o3')) return svgOpenAI;
+  return '🤖';
+}
+
+function formatLog(text) {
+  let context = 'none'; 
+  let lastSeenModel = null;  // Track model per-turn within this render
+  const lines = text.split('\n');
+  return lines.map((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) return '';
+    if (trimmed === '---') { context = 'none'; return ''; }
+    
+    // User header/line
+    if (trimmed.includes('\uD83D\uDC64 USER:') || (context === 'user' && !trimmed.includes('\uD83E\uDDBE'))) {
+      if (trimmed.includes('\uD83D\uDC64 USER:')) context = 'user';
+      const content = trimmed.replace(/^\[.*?\]\s*\uD83D\uDC64\s*USER:\s*/, '').replace(/^USER:\s*/, '');
+      if (!content) return '';
+      return `<div class="user-line" dir="auto">${escapeHTML(content)}</div>`;
+    }
+    
+    // Agent header/line
+    if (trimmed.match(/^\[.*?\]\s*(?:\uD83E\uDD16|\uD83E\uDDBE)?\s*AGENT(?:\|.*?)?:/) || trimmed.match(/^(?:\uD83E\uDD16|\uD83E\uDDBE)?\s*AGENT(?:\|.*?)?:/)) {
+      context = 'agent';
+      const content = trimmed.replace(/^\[.*?\]\s*(?:\uD83E\uDD16|\uD83E\uDDBE)?\s*AGENT(?:\|.*?)?:\s*/, '').replace(/^(?:\uD83E\uDD16|\uD83E\uDDBE)?\s*AGENT(?:\|.*?)?:\s*/, '');
+      
+      // Look ahead to detect language for direction
+      let isHebrew = false;
+      let checkStr = content;
+      if (!checkStr) {
+        for (let i = index + 1; i < Math.min(index + 10, lines.length); i++) {
+          const nextLine = lines[i].trim();
+          if (nextLine && !nextLine.startsWith('---') && !nextLine.includes('Tools:')) {
+            checkStr = nextLine;
+            break;
+          }
+        }
+      }
+      if (checkStr && /[\u0590-\u05FF]/.test(checkStr)) isHebrew = true;
+      
+      // Extract model from the AGENT|ModelName: pipe syntax
+      const modelMatch = trimmed.match(/(?:\uD83E\uDD16|\uD83E\uDDBE)?\s*AGENT\|(.*?):/);
+      if (modelMatch && modelMatch[1]) {
+        lastSeenModel = modelMatch[1];
+      }
+      
+      // Use the per-turn model, NOT the global
+      let agentName = lastSeenModel || 'Agent';
+      let agentIcon = getIconForLabel(agentName);
+      
+      const dir = isHebrew ? 'rtl' : 'ltr';
+      let html = `<div class="log-text" style="color:var(--text-dim);font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:6px" dir="${dir}">${agentIcon} <b>${escapeHTML(agentName)}</b></div>`;
+      
+      if (content) {
+        html += `<div class="log-text" dir="auto">${escapeHTML(content)}</div>`;
+      }
+      return html;
+    }
+
+    // Tool calls - Header
+    if (trimmed.includes('\uD83D\uDD27 Tools:') || trimmed.includes('Tools:') || trimmed.startsWith('TOOL:')) {
+      context = 'tool';
+      const pillStyle = 'display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:6px;padding:4px 8px;margin:4px 0;font-size:12px;font-family:inherit';
+      
+      // Analyzed/Viewed file — check FIRST before Edited
+      if (trimmed.includes('Viewing') || trimmed.includes('view_file')) {
+        const fMatch = trimmed.match(/\[(.*?\.[a-z]+)/i);
+        const fname = fMatch ? fMatch[1] : '';
+        // Include line range if present
+        const lineMatch = trimmed.match(/#L(\d+[-–]\d+)/);
+        const lineRange = lineMatch ? ` ${lineMatch[0]}` : '';
+        return `<div style="${pillStyle}"><span style="color:#8ab4f8;font-weight:600">Analyzed</span> <span style="color:var(--accent);font-weight:600">📄</span> <span style="color:var(--text);font-family:'SF Mono',monospace">${fname ? escapeHTML(fname) + escapeHTML(lineRange) : 'file'}</span></div>`;
+      }
+      // Edited file — only for actual edit operations
+      const fileMatch = trimmed.match(/\[(.*?\.[a-z]+)\]/i);
+      if (fileMatch && (trimmed.includes('Editing') || trimmed.includes('replace') || trimmed.includes('write') || trimmed.includes('multi_replace'))) {
+         const filename = fileMatch[1];
+         return `<div style="${pillStyle}"><span style="color:var(--text-dim);font-weight:600">Edited</span> <span style="color:var(--accent);font-weight:600">&lt;/&gt;</span> <span style="color:var(--text);font-family:'SF Mono',monospace">${escapeHTML(filename)}</span></div>`;
+      }
+      // Running command
+      if (trimmed.includes('Running') || trimmed.includes('run_command')) {
+        return `<div style="${pillStyle}"><span style="color:#ffb347;font-weight:600">Running</span> <span style="color:var(--text-dim)">⚡</span> <span style="color:var(--text-muted);font-family:'SF Mono',monospace">command</span></div>`;
+      }
+      // Searching
+      if (trimmed.includes('Searching') || trimmed.includes('grep') || trimmed.includes('search')) {
+        return `<div style="${pillStyle}"><span style="color:#a78bfa;font-weight:600">Searching</span> <span style="color:var(--text-dim)">🔍</span></div>`;
+      }
+      // Generating image
+      if (trimmed.includes('generate_image') || trimmed.includes('Generating')) {
+        return `<div style="${pillStyle}"><span style="color:#34d399;font-weight:600">Generating</span> <span style="color:var(--text-dim)">🎨</span></div>`;
+      }
+      // Generic tool
+      return `<div style="${pillStyle}"><span style="color:var(--text-dim);font-weight:600">🔧 ${escapeHTML(trimmed.replace(/.*Tools:\s*/, '').substring(0, 40))}</span></div>`;
+    }
+    
+    // File modification highlights
+    if (trimmed.includes('The following changes were made') || trimmed.includes('Successfully modified')) {
+      context = 'tool';
+      const fileMatch = trimmed.match(/(?:to|file):\s*(.*?)(?:\.|$)/i);
+      const filename = fileMatch ? fileMatch[1].split(/[\\/]/).pop() : 'file';
+      return `<div style="color:#ff9f43;margin:8px 0 12px 10px;font-size:11px;font-family:'SF Mono',monospace">✏️ <b>MODIFIED:</b> ${escapeHTML(filename)}</div>`;
+    }
+
+    // Tool body/results
+    if (context === 'tool' || trimmed.startsWith('  ') || trimmed.includes('Output:')) {
+      return `<div class="line-tool-body">${escapeHTML(line)}</div>`;
+    }
+
+    // Default agent text
+    if (context === 'agent') {
+      return `<div class="log-text" dir="auto">${escapeHTML(line)}</div>`;
+    }
+
+    // Catch-all
+    return `<div class="log-text" style="opacity:0.7" dir="auto">${escapeHTML(line)}</div>`;
+  }).filter(Boolean).join('');
+}
+
+function scrollLogToBottom() {
+  const el = document.getElementById('logContent');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+async function renderArtifacts(el) {
+  if (!currentConvId) {
+    const convs = await fetchJSON('/api/conversations');
+    if (convs.length > 0) currentConvId = convs[0].id;
+    else {
+      el.innerHTML = `<div class="empty-state"><div class="emoji">📄</div><p>Select a conversation first</p></div>`;
+      return;
+    }
+  }
+
+  const arts = await fetchJSON(`/api/conversation/${currentConvId}/artifacts`);
+  
+  if (arts.length === 0) {
+    el.innerHTML = `<div class="empty-state"><div class="emoji">📄</div><p>No artifacts in this conversation</p></div>`;
+    return;
+  }
+
+  el.innerHTML = arts.map((a, i) => `
+    <div class="artifact-card">
+      <div class="artifact-header" data-idx="${i}">
+        <span class="artifact-name">📄 ${escapeHTML(a.name)}</span>
+        <span class="artifact-size">${(a.size / 1024).toFixed(1)} KB</span>
+      </div>
+      <div class="artifact-body" id="art-${i}">${escapeHTML(a.content)}</div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('.artifact-header').forEach(h => {
+    h.addEventListener('click', () => {
+      const body = document.getElementById('art-' + h.dataset.idx);
+      body.classList.toggle('open');
+    });
+  });
+}
+
+function renderApprovals(el) {
+  if (pendingApprovals.length === 0) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="emoji">✅</div>
+        <p>No pending approvals.<br>Changes will appear here when the agent requests approval.</p>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = pendingApprovals.map(a => `
+    <div class="approval-card" data-id="${a.id}">
+      <div class="approval-title">${escapeHTML(a.title || 'Change Request')}</div>
+      <div class="approval-desc">${escapeHTML(a.description || '')}</div>
+      ${a.diff ? `<div class="approval-diff">${formatDiff(a.diff)}</div>` : ''}
+      <div class="approval-actions">
+        <button class="btn btn-approve" onclick="handleApproval(${a.id}, true)">✅ Approve</button>
+        <button class="btn btn-reject" onclick="handleApproval(${a.id}, false)">❌ Reject</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function handleApproval(id, approved) {
+  await fetch(API + '/api/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, approved })
+  });
+  pendingApprovals = pendingApprovals.filter(a => a.id !== id);
+  updateApprovalBadge();
+  render();
+}
+
+function formatDiff(diff) {
+  return diff.split('\n').map(line => {
+    if (line.startsWith('+')) return `<span class="diff-add">${escapeHTML(line)}</span>`;
+    if (line.startsWith('-')) return `<span class="diff-del">${escapeHTML(line)}</span>`;
+    return escapeHTML(line);
+  }).join('\n');
+}
+
+function escapeHTML(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Load pending approvals
+async function loadApprovals() {
+  try {
+    const res = await fetchJSON('/api/approvals');
+    pendingApprovals = res;
+    updateApprovalBadge();
+  } catch {}
+}
+
+// Chat functions (used by monitor view)
+function renderBubble(msg) {
+  const time = new Date(msg.timestamp).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  const statusDot = msg.role === 'user' 
+    ? `<span class="status-dot ${msg.read ? 'read' : 'unread'}"></span>`
+    : '';
+  return `
+    <div class="chat-bubble ${msg.role}">
+      ${escapeHTML(msg.text)}
+      <span class="chat-time">${time} ${statusDot}</span>
+    </div>`;
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  const pastedImage = window._pastedImage;
+  if (!text && !pastedImage) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  
+  // Clear paste preview
+  const preview = document.getElementById('pastePreview');
+  if (preview) preview.remove();
+  window._pastedImage = null;
+
+  // Show pending in log immediately
+  const logEl = document.getElementById('logContent');
+  if (logEl) {
+    const imgTag = pastedImage ? '<div style="margin:4px 0"><span style="background:rgba(255,255,255,0.1);border-radius:4px;padding:2px 6px;font-size:10px">📎 Image attached</span></div>' : '';
+    logEl.insertAdjacentHTML('beforeend', `<div class="chat-bubble user-bubble" dir="auto" style="background:#1e3a8a;color:#eef4ff;padding:8px 12px;font-size:12px;max-width:75%"><div style="font-size:10px;opacity:0.7;margin-bottom:2px">👤 You</div>${imgTag}<div class="bubble-content">${escapeHTML(text || '(image)')}</div><div class="bubble-time">⏳ sending...</div></div>`);
+    scrollLogToBottom();
+  }
+
+  try {
+    if (pastedImage) {
+      // Upload with image via FormData
+      const formData = new FormData();
+      formData.append('image', pastedImage, 'paste-' + Date.now() + '.png');
+      if (text) formData.append('text', text);
+      formData.append('convId', currentConvId || '');
+      const res = await fetch(API + '/api/chat/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.id) window._lastQueueId = data.id;
+    } else {
+      const res = await fetch(API + '/api/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, convId: currentConvId })
+      });
+      const data = await res.json();
+      if (data.id) window._lastQueueId = data.id;
+    }
+    // Refresh log after CDP injection settles
+    setTimeout(() => { loadLiveLog(); scrollLogToBottom(); }, 2000);
+  } catch (err) {
+    console.error('Send failed:', err);
+  }
+}
+
+// Queue status UI
+function updateQueueUI(queue) {
+  const bar = document.getElementById('queueStatus');
+  const textEl = document.getElementById('queueText');
+  const statusEl = document.getElementById('queueStatusLabel');
+  const cancelBtn = document.getElementById('queueCancel');
+  if (!bar || !queue || queue.length === 0) {
+    if (bar) bar.style.display = 'none';
+    return;
+  }
+  // Show latest message status
+  const last = queue[queue.length - 1];
+  window._lastQueueId = last.id;
+  bar.style.display = 'flex';
+  textEl.textContent = last.text.substring(0, 40) + (last.text.length > 40 ? '...' : '');
+  const statusMap = { pending: '⏳ Sending...', sent: '✅ Sent', failed: '❌ Failed', cancelled: '🚫 Cancelled' };
+  statusEl.textContent = statusMap[last.status] || last.status;
+  statusEl.className = 'q-status ' + (last.status || '');
+  cancelBtn.style.display = last.status === 'pending' ? '' : 'none';
+  // Auto-hide after 4s if sent
+  if (last.status === 'sent') {
+    setTimeout(() => { bar.style.display = 'none'; }, 4000);
+  }
+  // Auto-hide failed/cancelled after 5s
+  if (last.status === 'failed' || last.status === 'cancelled') {
+    setTimeout(() => { bar.style.display = 'none'; }, 5000);
+  }
+}
+
+// Init
+connectSSE();
+loadApprovals();
+render();
+
+// Register PWA service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
