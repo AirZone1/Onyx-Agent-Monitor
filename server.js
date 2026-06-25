@@ -358,19 +358,30 @@ function extractUserRequest(content) {
   return content.substring(0, 200);
 }
 
+// Normalize a tool-call arg value: strip wrapping quotes and unescape backslashes
+// (transcript stores args as JSON-encoded strings, e.g. '"e:\\\\OneDrive\\\\worklist\\\\..."')
+function normalizeArgPath(val) {
+  if (typeof val !== 'string') return '';
+  let s = val;
+  if (s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
+  s = s.replace(/\\\\/g, '\\');
+  return s;
+}
+
 // Detect workspace from conversation transcript tool call paths
 function detectWorkspace(convId) {
   if (global._workspaceCache && global._workspaceCache[convId]) return global._workspaceCache[convId];
 
+  const wsRegex = /[eE]:[\\\\\/]+OneDrive[\\\\\/]+([^\\\\\/\"\s]+)/;
   const basePath = path.join(BRAIN_DIR, convId, '.system_generated', 'logs');
-  const candidates = ['transcript_full.jsonl', 'transcript.jsonl'];
+  const candidates = ['transcript.jsonl', 'transcript_full.jsonl'];
   
   for (const fname of candidates) {
     const transcriptPath = path.join(basePath, fname);
     try {
       if (!fs.existsSync(transcriptPath)) continue;
       const raw = fs.readFileSync(transcriptPath, 'utf8');
-      const lines = raw.split('\n').filter(l => l.trim()).slice(0, 20);
+      const lines = raw.split('\n').filter(l => l.trim()).slice(0, 30);
       
       for (const line of lines) {
         try {
@@ -378,10 +389,11 @@ function detectWorkspace(convId) {
           if (entry.tool_calls && entry.tool_calls.length > 0) {
             for (const tc of entry.tool_calls) {
               const args = tc.args || {};
-              const filePath = args.AbsolutePath || args.TargetFile || 
+              const rawPath = args.AbsolutePath || args.TargetFile || 
                                args.SearchPath || args.Cwd || 
                                args.DirectoryPath || '';
-              const wsMatch = filePath.match(/[eE]:[\\\/]+OneDrive[\\\/]+([^\\\/\"\s]+)/);
+              const filePath = normalizeArgPath(rawPath);
+              const wsMatch = filePath.match(wsRegex);
               if (wsMatch && wsMatch[1] && !wsMatch[1].startsWith('.')) {
                 if (!global._workspaceCache) global._workspaceCache = {};
                 global._workspaceCache[convId] = wsMatch[1];
@@ -390,7 +402,7 @@ function detectWorkspace(convId) {
             }
           }
           if (entry.content) {
-            const cm = entry.content.match(/[eE]:[\\\/]+OneDrive[\\\/]+([^\\\/\"\s]+)/);
+            const cm = entry.content.match(wsRegex);
             if (cm && cm[1] && cm[1].length > 2 && !cm[1].startsWith('.')) {
               if (!global._workspaceCache) global._workspaceCache = {};
               global._workspaceCache[convId] = cm[1];
@@ -460,7 +472,7 @@ function getConversations() {
         return { id: d.name, lastMod, preview, title: cachedTitle || title, path: artifactDir, workspace, workspaceLabel: getWorkspaceLabel(workspace), workspaceColor: getWorkspaceColor(workspace) };
       })
       .sort((a, b) => b.lastMod - a.lastMod)
-      .slice(0, 20);
+      .slice(0, 50);
     return dirs;
   } catch { return []; }
 }
@@ -510,30 +522,36 @@ function parseLogLine(line, state = { currentModel: 'Agent' }) {
 }
 
 function getConversationLog(convId) {
-  const overviewPath = path.join(BRAIN_DIR, convId, '.system_generated', 'logs', 'overview.txt');
-  try {
-    const raw = fs.readFileSync(overviewPath, 'utf8');
-    const lines = raw.split('\n').filter(l => l.trim());
-    
-    // Pass 1: Find the initial model
-    let initialModel = 'Agent';
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.content && entry.content.includes('<USER_SETTINGS_CHANGE>')) {
-          const m = entry.content.match(/from (.*?) to (.*?)\. No need/);
-          if (m && m[1] && m[1] !== 'None') {
-            initialModel = m[1];
-            break; // found the first switch, so we know what it was before
+  const logsDir = path.join(BRAIN_DIR, convId, '.system_generated', 'logs');
+  const candidates = [
+    path.join(logsDir, 'overview.txt'),
+    path.join(logsDir, 'transcript.jsonl'),
+    path.join(logsDir, 'transcript_full.jsonl'),
+  ];
+  for (const logPath of candidates) {
+    try {
+      if (!fs.existsSync(logPath)) continue;
+      const raw = fs.readFileSync(logPath, 'utf8');
+      const lines = raw.split('\n').filter(l => l.trim());
+      let initialModel = 'Agent';
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.content && entry.content.includes('<USER_SETTINGS_CHANGE>')) {
+            const m = entry.content.match(/from (.*?) to (.*?)\. No need/);
+            if (m && m[1] && m[1] !== 'None') {
+              initialModel = m[1];
+              break;
+            }
           }
-        }
-      } catch {}
-    }
-    
-    const state = { currentModel: initialModel };
-    const parsed = lines.map(l => parseLogLine(l, state)).filter(Boolean);
-    return parsed.join('\n---\n\n');
-  } catch { return 'Log not found.'; }
+        } catch {}
+      }
+      const state = { currentModel: initialModel };
+      const parsed = lines.map(l => parseLogLine(l, state)).filter(Boolean);
+      if (parsed.length > 0) return parsed.join('\n---\n\n');
+    } catch {}
+  }
+  return 'Log not found.';
 }
 
 function getArtifacts(convId) {
