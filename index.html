@@ -135,6 +135,78 @@
     min-height: 0;
   }
 
+  /* Workspace tabs */
+  .ws-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px 4px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-shrink: 0;
+  }
+  .ws-tabs::-webkit-scrollbar { display: none; }
+
+  .ws-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+  .ws-tab:active { transform: scale(0.96); }
+  .ws-tab.active {
+    border-color: var(--accent);
+    background: var(--accent)20;
+    color: var(--text);
+  }
+  .ws-tab .ws-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .ws-tab .ws-count {
+    font-size: 10px;
+    opacity: 0.6;
+    min-width: 14px;
+    text-align: center;
+    background: var(--bg-surface);
+    border-radius: 8px;
+    padding: 1px 4px;
+  }
+  .ws-tab .ws-active-indicator {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green-glow);
+    animation: pulse-dot 2s infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Workspace badge on conv card */
+  .ws-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    color: #fff;
+    opacity: 0.85;
+    letter-spacing: 0.3px;
+  }
+
   /* Conversation list */
   .conv-card {
     background: var(--bg-card);
@@ -1073,10 +1145,17 @@ async function render() {
   }
 }
 
+// Current workspace filter for conversations tab
+let _selectedWorkspace = localStorage.getItem('onyx_ws_filter') || null;
+
 async function renderConversations(el) {
-  const convs = await fetchJSON('/api/conversations');
+  // Fetch workspaces and conversations in parallel
+  const [workspaces, allConvs] = await Promise.all([
+    fetchJSON('/api/workspaces'),
+    fetchJSON('/api/conversations')
+  ]);
   
-  if (convs.length === 0) {
+  if (allConvs.length === 0) {
     el.innerHTML = `
       <div class="empty-state">
         <div class="emoji">📭</div>
@@ -1085,12 +1164,57 @@ async function renderConversations(el) {
     return;
   }
 
+  // Filter conversations by selected workspace
+  let convs = allConvs;
+  if (_selectedWorkspace) {
+    if (_selectedWorkspace === '__other__') {
+      convs = allConvs.filter(c => !c.workspace);
+    } else {
+      convs = allConvs.filter(c => c.workspace === _selectedWorkspace);
+    }
+  }
+
+  // Build workspace tabs HTML
+  const totalCount = allConvs.length;
+  const wsTabsHtml = `
+    <div class="ws-tabs">
+      <div class="ws-tab ${!_selectedWorkspace ? 'active' : ''}" data-ws="">
+        <span class="ws-dot" style="background:var(--text-muted)"></span>
+        All
+        <span class="ws-count">${totalCount}</span>
+      </div>
+      ${workspaces.map(ws => `
+        <div class="ws-tab ${_selectedWorkspace === ws.name ? 'active' : ''}" data-ws="${ws.name}">
+          <span class="ws-dot" style="background:${ws.color}"></span>
+          ${escapeHTML(ws.label)}
+          <span class="ws-count">${ws.conversations}</span>
+          ${ws.isActive ? '<span class="ws-active-indicator"></span>' : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+
   el.innerHTML = `
+    ${wsTabsHtml}
     <div class="search-bar">
       <input type="text" placeholder="🔍 Search conversations..." id="convSearch">
     </div>
-    <div id="convList">${convs.map(c => renderConvCard(c)).join('')}</div>
+    <div id="convList">${convs.map(c => renderConvCard(c, !_selectedWorkspace)).join('')}</div>
   `;
+
+  // Workspace tab click handlers
+  document.querySelectorAll('.ws-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const ws = tab.dataset.ws;
+      _selectedWorkspace = ws || null;
+      if (_selectedWorkspace) {
+        localStorage.setItem('onyx_ws_filter', _selectedWorkspace);
+      } else {
+        localStorage.removeItem('onyx_ws_filter');
+      }
+      renderConversations(el);
+    });
+  });
 
   document.getElementById('convSearch').addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
@@ -1133,16 +1257,18 @@ async function renderConversations(el) {
   });
 }
 
-function renderConvCard(c) {
+function renderConvCard(c, showBadge) {
   const timeStr = c.lastMod ? new Date(c.lastMod).toLocaleString('he-IL', { 
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
   }) : '';
   const shortId = c.id.substring(0, 8);
   const title = c.title || '';
+  const badge = (showBadge && c.workspaceLabel) ? 
+    `<span class="ws-badge" style="background:${c.workspaceColor}">${escapeHTML(c.workspaceLabel)}</span>` : '';
   return `
     <div class="conv-card ${c.id === currentConvId ? 'selected' : ''}" data-id="${c.id}">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span class="conv-id">${shortId}...</span>
+        <span class="conv-id">${shortId}... ${badge}</span>
         <span class="conv-time">${timeStr}</span>
       </div>
       ${title ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin:4px 0">${escapeHTML(title)}</div>` : ''}

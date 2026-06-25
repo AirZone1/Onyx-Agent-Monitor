@@ -11,6 +11,24 @@ const os = require('os');
 const PORT = 3847;
 const CDP_PORTS_TO_TRY = [9000, 9001, 9222]; // Common debugging ports
 
+// Workspace display names (directory name -> friendly label)
+const WORKSPACE_LABELS = {
+  'ortho-app': 'OrthoTest',
+  'worklist': 'Worklist',
+  'nanopdf-rs': 'NanoPDF',
+  'miunex': 'Miunex',
+  'bhelper': 'BHelper',
+  'OrthoDoc': 'OrthoDoc',
+  'bokertovv': 'BokerTov',
+  'game': 'Game',
+};
+
+// Workspace color palette (consistent badge colors)
+const WORKSPACE_COLORS = [
+  '#6c5ce7', '#00b894', '#e17055', '#74b9ff', '#fdcb6e',
+  '#a29bfe', '#55efc4', '#fab1a0', '#81ecec', '#ffeaa7',
+];
+
 // CDP WebSocket connection for injecting messages
 let cdpWs = null;
 let cdpIdCounter = 1;
@@ -340,6 +358,67 @@ function extractUserRequest(content) {
   return content.substring(0, 200);
 }
 
+// Detect workspace from conversation transcript tool call paths
+function detectWorkspace(convId) {
+  if (global._workspaceCache && global._workspaceCache[convId]) return global._workspaceCache[convId];
+
+  const basePath = path.join(BRAIN_DIR, convId, '.system_generated', 'logs');
+  const candidates = ['transcript_full.jsonl', 'transcript.jsonl'];
+  
+  for (const fname of candidates) {
+    const transcriptPath = path.join(basePath, fname);
+    try {
+      if (!fs.existsSync(transcriptPath)) continue;
+      const raw = fs.readFileSync(transcriptPath, 'utf8');
+      const lines = raw.split('\n').filter(l => l.trim()).slice(0, 20);
+      
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.tool_calls && entry.tool_calls.length > 0) {
+            for (const tc of entry.tool_calls) {
+              const args = tc.args || {};
+              const filePath = args.AbsolutePath || args.TargetFile || 
+                               args.SearchPath || args.Cwd || 
+                               args.DirectoryPath || '';
+              const wsMatch = filePath.match(/[eE]:[\\\/]+OneDrive[\\\/]+([^\\\/\"\s]+)/);
+              if (wsMatch && wsMatch[1] && !wsMatch[1].startsWith('.')) {
+                if (!global._workspaceCache) global._workspaceCache = {};
+                global._workspaceCache[convId] = wsMatch[1];
+                return wsMatch[1];
+              }
+            }
+          }
+          if (entry.content) {
+            const cm = entry.content.match(/[eE]:[\\\/]+OneDrive[\\\/]+([^\\\/\"\s]+)/);
+            if (cm && cm[1] && cm[1].length > 2 && !cm[1].startsWith('.')) {
+              if (!global._workspaceCache) global._workspaceCache = {};
+              global._workspaceCache[convId] = cm[1];
+              return cm[1];
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+  return null;
+}
+
+function getWorkspaceLabel(ws) {
+  if (!ws) return 'Other';
+  return WORKSPACE_LABELS[ws] || ws;
+}
+
+function getWorkspaceColor(ws) {
+  if (!ws) return WORKSPACE_COLORS[WORKSPACE_COLORS.length - 1];
+  const knownKeys = Object.keys(WORKSPACE_LABELS);
+  const idx = knownKeys.indexOf(ws);
+  if (idx >= 0) return WORKSPACE_COLORS[idx % WORKSPACE_COLORS.length];
+  let hash = 0;
+  for (let i = 0; i < ws.length; i++) hash = (hash * 31 + ws.charCodeAt(i)) & 0x7fffffff;
+  return WORKSPACE_COLORS[hash % WORKSPACE_COLORS.length];
+}
+
 function getConversations() {
   try {
     const dirs = fs.readdirSync(BRAIN_DIR, { withFileTypes: true })
@@ -377,7 +456,8 @@ function getConversations() {
           }
         } catch {}
         const cachedTitle = (global._convTitleCache || {})[d.name];
-        return { id: d.name, lastMod, preview, title: cachedTitle || title, path: artifactDir };
+        const workspace = detectWorkspace(d.name);
+        return { id: d.name, lastMod, preview, title: cachedTitle || title, path: artifactDir, workspace, workspaceLabel: getWorkspaceLabel(workspace), workspaceColor: getWorkspaceColor(workspace) };
       })
       .sort((a, b) => b.lastMod - a.lastMod)
       .slice(0, 20);
@@ -518,6 +598,7 @@ function watchConversation(convId) {
 // Global watcher: track which conversation was most recently written to by Antigravity
 let _lastActiveConvId = null;
 let _lastActiveTime = 0;
+let _activePerWorkspace = {};
 function startGlobalBrainWatcher() {
   try {
     // Watch the brain directory recursively for any overview.txt changes
@@ -530,6 +611,8 @@ function startGlobalBrainWatcher() {
         if (convId && convId.match(/^[a-f0-9]{8}-/)) {
           _lastActiveConvId = convId;
           _lastActiveTime = Date.now();
+          const ws = detectWorkspace(convId);
+          if (ws) { _activePerWorkspace[ws] = { convId, time: Date.now() }; }
         }
       }
     });
@@ -1125,14 +1208,23 @@ const server = http.createServer(async (req, res) => {
   // Detect current active conversation in Antigravity
   if (url.pathname === '/api/agent/active-conversation' && req.method === 'GET') {
     try {
-      const age = Date.now() - _lastActiveTime;
-      if (_lastActiveConvId && age < 30000) {
+      const wsFilter = url.searchParams.get('workspace') || null;
+      let activeConvId = _lastActiveConvId;
+      let activeTime = _lastActiveTime;
+      if (wsFilter && _activePerWorkspace[wsFilter]) {
+        activeConvId = _activePerWorkspace[wsFilter].convId;
+        activeTime = _activePerWorkspace[wsFilter].time;
+      }
+      const age = Date.now() - activeTime;
+      if (activeConvId && age < 30000) {
         // A conversation was recently written to â€” this is the active one
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ 
           ok: true, 
-          convId: _lastActiveConvId,
+          convId: activeConvId,
           age: Math.round(age / 1000),
+          workspace: detectWorkspace(activeConvId),
+          workspaceLabel: getWorkspaceLabel(detectWorkspace(activeConvId)),
           method: 'brain-watcher'
         }));
       } else {
@@ -1318,8 +1410,32 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (url.pathname === '/api/conversations') {
+  if (url.pathname === '/api/workspaces') {
     const convs = getConversations();
+    const wsMap = {};
+    for (const c of convs) {
+      const ws = c.workspace || '__other__';
+      if (!wsMap[ws]) wsMap[ws] = { name: ws, label: getWorkspaceLabel(ws === '__other__' ? null : ws), color: getWorkspaceColor(ws === '__other__' ? null : ws), conversations: 0, activeConvId: null, lastActivity: 0 };
+      wsMap[ws].conversations++;
+      if (c.lastMod > wsMap[ws].lastActivity) wsMap[ws].lastActivity = c.lastMod;
+    }
+    for (const [ws, info] of Object.entries(_activePerWorkspace)) {
+      if (wsMap[ws]) {
+        wsMap[ws].activeConvId = info.convId;
+        wsMap[ws].isActive = (Date.now() - info.time) < 30000;
+      }
+    }
+    const workspaces = Object.values(wsMap).sort((a, b) => b.lastActivity - a.lastActivity);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(workspaces));
+  }
+
+  if (url.pathname === '/api/conversations') {
+    const wsFilter = url.searchParams.get('workspace') || null;
+    let convs = getConversations();
+    if (wsFilter) {
+      convs = wsFilter === '__other__' ? convs.filter(c => !c.workspace) : convs.filter(c => c.workspace === wsFilter);
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(convs));
   }

@@ -2,7 +2,7 @@
 chcp 65001 >nul 2>&1
 title Onyx Agent Monitor Control
 color 0A
-set "MONITOR_DIR=e:\OneDrive\ortho-app\tools\mobile-monitor"
+set "MONITOR_DIR=e:\OneDrive\onyx-monitor"
 set "PORT=3847"
 
 :MENU
