@@ -2255,10 +2255,33 @@ async function sendChatMessage() {
       const data = await res.json();
       if (data.id) window._lastQueueId = data.id;
     }
-    // Refresh log after CDP injection settles
-    setTimeout(() => { loadLiveLog(); scrollLogToBottom(); }, 2000);
+    // Poll queue status to update the bubble directly (don't rely only on SSE)
+    setTimeout(async () => {
+      try {
+        const qRes = await fetch(API + '/api/chat/queue');
+        const queue = await qRes.json();
+        if (queue && queue.length > 0) {
+          updateQueueUI(queue);
+          const last = queue[queue.length - 1];
+          const statusIcons = { pending: '⏳ sending...', sent: '✅ sent', failed: '❌ ' + (last.reason || 'failed'), cancelled: '🚫 cancelled' };
+          const bubbles = document.querySelectorAll('.chat-bubble.user-bubble .bubble-time');
+          if (bubbles.length > 0) {
+            const lastBubble = bubbles[bubbles.length - 1];
+            if (lastBubble.textContent.includes('sending')) {
+              lastBubble.textContent = statusIcons[last.status] || last.status;
+            }
+          }
+        }
+      } catch {}
+      loadLiveLog(); scrollLogToBottom();
+    }, 3000);
   } catch (err) {
     console.error('Send failed:', err);
+    // Update bubble on network error
+    const bubbles = document.querySelectorAll('.chat-bubble.user-bubble .bubble-time');
+    if (bubbles.length > 0) {
+      bubbles[bubbles.length - 1].textContent = '❌ network error';
+    }
   }
 }
 
