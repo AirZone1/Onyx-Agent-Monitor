@@ -4,6 +4,8 @@ title Onyx Agent Monitor Control
 color 0A
 set "MONITOR_DIR=e:\OneDrive\onyx-monitor"
 set "PORT=3847"
+set "CDP_PORT=9000"
+set "IDE_EXE=%LOCALAPPDATA%\Programs\Antigravity IDE\Antigravity IDE.exe"
 
 :MENU
 cls
@@ -17,6 +19,7 @@ echo   [2]  Stop Server
 echo   [3]  Open Tunnel
 echo   [4]  Close Tunnel
 echo   [5]  Status
+echo   [6]  Launch IDE with CDP
 echo   [0]  Exit
 echo.
 echo   * Server runs in the background (no window).
@@ -25,13 +28,14 @@ echo.
 echo     Made by AirZone
 echo.
 set "choice="
-set /p choice="  Choose [0-5]: "
+set /p choice="  Choose [0-6]: "
 
 if "%choice%"=="1" goto START
 if "%choice%"=="2" goto STOP
 if "%choice%"=="3" goto TUNNEL_START
 if "%choice%"=="4" goto TUNNEL_STOP
 if "%choice%"=="5" goto STATUS
+if "%choice%"=="6" goto LAUNCH_IDE
 if "%choice%"=="0" goto EXIT
 goto MENU
 
@@ -118,6 +122,27 @@ echo.
 echo  Stopping tunnel...
 taskkill /IM cloudflared.exe /F >nul 2>&1
 echo  Tunnel stopped.
+echo.
+pause
+goto MENU
+
+:LAUNCH_IDE
+echo.
+echo  Launching Antigravity IDE with CDP on port %CDP_PORT%...
+echo.
+echo  NOTE: This will close and reopen the IDE.
+echo        Save your work first!
+echo.
+set /p confirm="  Continue? (Y/N): "
+if /I not "%confirm%"=="Y" goto MENU
+echo  Closing IDE...
+taskkill /IM "Antigravity IDE.exe" /F >nul 2>&1
+timeout /t 3 /nobreak >nul
+echo  Starting IDE with --remote-debugging-port=%CDP_PORT%...
+start "" "%IDE_EXE%" --remote-debugging-port=%CDP_PORT%
+timeout /t 5 /nobreak >nul
+echo  Reconnecting CDP from monitor server...
+node -e "require('http').get('http://localhost:%PORT%/api/reset', r => {let d='';r.on('data',c=>d+=c);r.on('end',()=>{console.log('  ' + d);process.exit(0)})}).on('error', e => {console.log('  Server not running: ' + e.message);process.exit(0)})" 2>nul
 echo.
 pause
 goto MENU

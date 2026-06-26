@@ -1092,6 +1092,18 @@ function connectSSE() {
       }
       if (data.type === 'queue_update' && data.queue) {
         updateQueueUI(data.queue);
+        // Also update chat bubble status indicators
+        const last = data.queue[data.queue.length - 1];
+        if (last) {
+          const statusMap = { pending: '⏳ sending...', sent: '✅ sent', failed: '❌ failed: ' + (last.reason || 'error'), cancelled: '🚫 cancelled' };
+          const bubbles = document.querySelectorAll('.chat-bubble.user-bubble .bubble-time');
+          if (bubbles.length > 0) {
+            const lastBubble = bubbles[bubbles.length - 1];
+            if (lastBubble.textContent.includes('sending')) {
+              lastBubble.textContent = statusMap[last.status] || last.status;
+            }
+          }
+        }
       }
     } catch {}
   };
@@ -1410,10 +1422,10 @@ async function renderMonitor(el) {
         sels.forEach(s => s.innerHTML = `<option value="" selected>${data.current}</option>`);
         updateModelIcon(data.current);
       } else {
-        sels.forEach(s => s.innerHTML = '<option value="">N/A</option>');
+        sels.forEach(s => s.innerHTML = '<option value="">No CDP</option>');
       }
     } catch {
-      document.querySelectorAll('#modelSelectorBottom').forEach(s => s.innerHTML = '<option value="">N/A</option>');
+      document.querySelectorAll('#modelSelectorBottom').forEach(s => s.innerHTML = '<option value="">No CDP</option>');
     }
   }
   

@@ -906,7 +906,46 @@ const server = http.createServer(async (req, res) => {
   // Get available models and current selection via CDP
   if (url.pathname === '/api/agent/models' && req.method === 'GET') {
     try {
-      if (!cdpWs || cdpWs.readyState !== 1 || !cdpContextId) await connectCDP();
+      // Try CDP first
+      if (!cdpWs || cdpWs.readyState !== 1 || !cdpContextId) {
+        try { await connectCDP(); } catch {}
+      }
+      // If CDP still unavailable, extract model from conversation transcripts
+      if (!cdpWs || cdpWs.readyState !== 1 || !cdpContextId) {
+        let modelName = null;
+        const convs = getConversations();
+        for (const conv of convs.slice(0, 3)) {
+          for (const brainDir of BRAIN_DIRS) {
+            const tp = path.join(brainDir, conv.id, '.system_generated', 'logs', 'transcript.jsonl');
+            try {
+              if (!fs.existsSync(tp)) continue;
+              const raw = fs.readFileSync(tp, 'utf8');
+              const lines = raw.split('\n').filter(l => l.trim()).slice(0, 15);
+              for (const line of lines) {
+                try {
+                  const entry = JSON.parse(line);
+                  if (entry.content) {
+                    const mMatch = entry.content.match(/(?:gemini-[0-9a-z.-]+|claude-[0-9a-z.-]+|gpt-[0-9a-z.-]+)/i);
+                    if (mMatch) { modelName = mMatch[0]; break; }
+                  }
+                } catch {}
+              }
+              if (modelName) break;
+            } catch {}
+          }
+          if (modelName) break;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          ok: true,
+          current: modelName || 'Agent',
+          models: [],
+          method: modelName ? 'transcript' : 'fallback',
+          cdp: false
+        }));
+      }
+      // CDP is available — proceed with original DOM inspection
+      await connectCDP();
       const SCRIPT = `(() => {
         // Find current model from aria-label on the model selector
         let current = '';
@@ -1861,6 +1900,16 @@ const server = http.createServer(async (req, res) => {
         const qi = global._messageQueue.find(m => m.id === msg.id);
         if (qi && qi.cancelled) { qi.status = 'cancelled'; return; }
 
+        // Check CDP before attempting injection
+        if (!cdpWs || cdpWs.readyState !== 1 || !cdpContextId) {
+          try { await connectCDP(); } catch {}
+        }
+        if (!cdpWs || cdpWs.readyState !== 1 || !cdpContextId) {
+          qi.status = 'failed';
+          qi.reason = 'No CDP - restart IDE with debug port';
+          const nocdpData = JSON.stringify({ type: 'queue_update', queue: global._messageQueue });
+          for (const client of sseClients) client.write(`data: ${nocdpData}\n\n`);
+        } else {
         try {
           // Re-switch conversation before inject to ensure correct target
           const targetId = convId || global._targetConvId;
@@ -1894,6 +1943,7 @@ const server = http.createServer(async (req, res) => {
           qi.status = 'failed';
           qi.reason = 'CDP error';
         }
+        } // end CDP-connected block
 
         const updData = JSON.stringify({ type: 'queue_update', queue: global._messageQueue });
         for (const client of sseClients) client.write(`data: ${updData}\n\n`);
