@@ -74,9 +74,9 @@ async function discoverCDPPort() {
   // Auto-discover: find Antigravity process listening ports
   try {
     const { execSync } = require('child_process');
-    // Find Antigravity main process
-    const procs = execSync('wmic process where "CommandLine like \'%Antigravity.exe%\' and CommandLine like \'%remote-debugging-port%\'" get ProcessId /format:csv', { encoding: 'utf8', timeout: 3000 });
-    const pids = procs.split('\n').map(l => l.trim().split(',').pop()).filter(p => p && /^\d+$/.test(p) && p !== 'ProcessId');
+    // Find Antigravity main process using PowerShell (wmic is deprecated and spams errors)
+    const procs = execSync('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \'*Antigravity*\' -and $_.CommandLine -like \'*remote-debugging-port*\' } | Select-Object -ExpandProperty ProcessId"', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+    const pids = procs.split('\n').map(l => l.trim()).filter(p => /^\d+$/.test(p));
     
     for (const pid of pids) {
       // Get listening ports for this process
@@ -803,11 +803,11 @@ const server = http.createServer(async (req, res) => {
       if (urlMatch) tunnelUrl = urlMatch[0];
     });
     tunnelProcess.on('close', () => { tunnelProcess = null; tunnelUrl = null; });
-    // Wait a bit for URL to appear
+    // Wait for cloudflared to establish tunnel and provide URL
     setTimeout(() => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, url: tunnelUrl }));
-    }, 5000);
+    }, 12000);
     return;
   }
 
@@ -1797,7 +1797,7 @@ const server = http.createServer(async (req, res) => {
     
     const chunks = [];
     req.on('data', c => chunks.push(c));
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const buf = Buffer.concat(chunks);
         const boundaryBuf = Buffer.from('--' + boundary);
@@ -1839,7 +1839,9 @@ const server = http.createServer(async (req, res) => {
         // Save image
         const ext = path.extname(imageName) || '.png';
         const fname = `mobile_${Date.now()}${ext}`;
-        const fpath = path.join(__dirname, 'uploads', fname);
+        const uploadDir = path.join(__dirname, 'uploads');
+        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+        const fpath = path.join(uploadDir, fname);
         fs.writeFileSync(fpath, imageFile);
         
         // Build message with image reference
@@ -1855,14 +1857,29 @@ const server = http.createServer(async (req, res) => {
         const sseData = JSON.stringify({ type: 'new_chat', message: msg });
         for (const client of sseClients) client.write(`data: ${sseData}\n\n`);
         
-        // Inject text + image reference via CDP
-        cdpInjectMessage(chatText).then(result => {
-          if (result.ok) console.log('  Ã¢Å“â€¦ CDP injected with image:', fname);
-          else console.log('  Ã¢Å¡Â Ã¯Â¸Â CDP image inject failed:', result.reason);
-        }).catch(() => {});
-        
+        // Track in queue for status updates
+        if (!global._messageQueue) global._messageQueue = [];
+        const qi = { id: msg.id, text: chatText.slice(0, 50), status: 'pending', timestamp: msg.timestamp };
+        global._messageQueue.push(qi);
+        if (global._messageQueue.length > 20) global._messageQueue = global._messageQueue.slice(-20);
+
+        // Check CDP before attempting injection
+        if (!cdpWs || cdpWs.readyState !== 1 || !cdpContextId) {
+          qi.status = 'failed';
+          qi.reason = 'No CDP';
+        } else {
+          try {
+            const result = await cdpInjectMessage(chatText);
+            qi.status = result.ok ? 'sent' : 'failed';
+            qi.reason = result.ok ? undefined : result.reason;
+          } catch { qi.status = 'failed'; qi.reason = 'CDP error'; }
+        }
+
+        const qData = JSON.stringify({ type: 'queue_update', queue: global._messageQueue });
+        for (const client of sseClients) client.write(`data: ${qData}\n\n`);
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, path: absPath, message: msg }));
+        res.end(JSON.stringify({ ok: true, id: msg.id, path: absPath, message: msg, queued: true }));
       } catch (err) {
         console.error('Upload error:', err);
         res.writeHead(500);
