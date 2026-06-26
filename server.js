@@ -16,6 +16,7 @@ const WORKSPACE_LABELS = {
   'ortho-app': 'OrthoTest',
   'worklist': 'Worklist',
   'nanopdf-rs': 'NanoPDF',
+  'onyx-monitor': 'OnyxMonitor',
   'miunex': 'Miunex',
   'bhelper': 'BHelper',
   'OrthoDoc': 'OrthoDoc',
@@ -298,7 +299,11 @@ async function executeVSCodeCommand(commandId) {
 }
 
 // Watch directory for conversation logs
-const BRAIN_DIR = path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
+const BRAIN_DIRS = [
+  path.join(os.homedir(), '.gemini', 'antigravity-ide', 'brain'),
+  path.join(os.homedir(), '.gemini', 'antigravity', 'brain'),
+].filter(d => fs.existsSync(d));
+const BRAIN_DIR = BRAIN_DIRS[0]; // Primary (newest)
 
 // SSE clients
 const sseClients = new Set();
@@ -353,9 +358,18 @@ function getLocalIP() {
 
 function extractUserRequest(content) {
   if (!content) return '';
-  const match = content.match(/<USER_REQUEST>\s*([\s\S]*?)<\/USER_REQUEST>/);
-  if (match) return match[1].trim().substring(0, 200);
-  return content.substring(0, 200);
+  let text = content;
+  const match = text.match(/<USER_REQUEST>\s*([\s\S]*?)<\/USER_REQUEST>/);
+  if (match) text = match[1].trim();
+  // Strip file:// URLs, @mentions, XML tags, markdown links
+  text = text.replace(/file:\/\/\/[^\s)]+/g, '');
+  text = text.replace(/@\[[^\]]*\]/g, '');
+  text = text.replace(/<[^>]+>/g, '');
+  text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  text = text.replace(/^#+\s*/gm, '');
+  text = text.trim();
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+  return (lines[0] || text).substring(0, 200);
 }
 
 // Normalize a tool-call arg value: strip wrapping quotes and unescape backslashes
@@ -372,46 +386,49 @@ function normalizeArgPath(val) {
 function detectWorkspace(convId) {
   if (global._workspaceCache && global._workspaceCache[convId]) return global._workspaceCache[convId];
 
-  const wsRegex = /[eE]:[\\\\\/]+OneDrive[\\\\\/]+([^\\\\\/\"\s]+)/;
-  const basePath = path.join(BRAIN_DIR, convId, '.system_generated', 'logs');
-  const candidates = ['transcript.jsonl', 'transcript_full.jsonl'];
-  
-  for (const fname of candidates) {
-    const transcriptPath = path.join(basePath, fname);
-    try {
-      if (!fs.existsSync(transcriptPath)) continue;
-      const raw = fs.readFileSync(transcriptPath, 'utf8');
-      const lines = raw.split('\n').filter(l => l.trim()).slice(0, 30);
-      
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          if (entry.tool_calls && entry.tool_calls.length > 0) {
-            for (const tc of entry.tool_calls) {
-              const args = tc.args || {};
-              const rawPath = args.AbsolutePath || args.TargetFile || 
-                               args.SearchPath || args.Cwd || 
-                               args.DirectoryPath || '';
-              const filePath = normalizeArgPath(rawPath);
-              const wsMatch = filePath.match(wsRegex);
-              if (wsMatch && wsMatch[1] && !wsMatch[1].startsWith('.')) {
-                if (!global._workspaceCache) global._workspaceCache = {};
-                global._workspaceCache[convId] = wsMatch[1];
-                return wsMatch[1];
+  const wsRegex = /[eE]:[\\\\\/]+OneDrive[\\\\\/]+([^\\\\\/\"\s`]+)/;
+
+  for (const brainDir of BRAIN_DIRS) {
+    const basePath = path.join(brainDir, convId, '.system_generated', 'logs');
+    const candidates = ['transcript.jsonl', 'transcript_full.jsonl'];
+    
+    for (const fname of candidates) {
+      const transcriptPath = path.join(basePath, fname);
+      try {
+        if (!fs.existsSync(transcriptPath)) continue;
+        const raw = fs.readFileSync(transcriptPath, 'utf8');
+        const lines = raw.split('\n').filter(l => l.trim()).slice(0, 30);
+        
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line);
+            if (entry.tool_calls && entry.tool_calls.length > 0) {
+              for (const tc of entry.tool_calls) {
+                const args = tc.args || {};
+                const rawPath = args.AbsolutePath || args.TargetFile || 
+                                 args.SearchPath || args.Cwd || 
+                                 args.DirectoryPath || '';
+                const filePath = normalizeArgPath(rawPath);
+                const wsMatch = filePath.match(wsRegex);
+                if (wsMatch && wsMatch[1] && !wsMatch[1].startsWith('.')) {
+                  if (!global._workspaceCache) global._workspaceCache = {};
+                  global._workspaceCache[convId] = wsMatch[1];
+                  return wsMatch[1];
+                }
               }
             }
-          }
-          if (entry.content) {
-            const cm = entry.content.match(wsRegex);
-            if (cm && cm[1] && cm[1].length > 2 && !cm[1].startsWith('.')) {
-              if (!global._workspaceCache) global._workspaceCache = {};
-              global._workspaceCache[convId] = cm[1];
-              return cm[1];
+            if (entry.content) {
+              const cm = entry.content.match(wsRegex);
+              if (cm && cm[1] && cm[1].length > 2 && !cm[1].startsWith('.')) {
+                if (!global._workspaceCache) global._workspaceCache = {};
+                global._workspaceCache[convId] = cm[1];
+                return cm[1];
+              }
             }
-          }
-        } catch {}
-      }
-    } catch {}
+          } catch {}
+        }
+      } catch {}
+    }
   }
   return null;
 }
@@ -433,47 +450,59 @@ function getWorkspaceColor(ws) {
 
 function getConversations() {
   try {
-    const dirs = fs.readdirSync(BRAIN_DIR, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => {
-        const overviewPath = path.join(BRAIN_DIR, d.name, '.system_generated', 'logs', 'overview.txt');
-        const artifactDir = path.join(BRAIN_DIR, d.name);
-        let lastMod = 0;
-        let preview = '';
-        let title = '';
+    const allDirs = [];
+    for (const brainDir of BRAIN_DIRS) {
+      try {
+        const entries = fs.readdirSync(brainDir, { withFileTypes: true }).filter(d => d.isDirectory());
+        for (const d of entries) allDirs.push({ name: d.name, brainDir });
+      } catch {}
+    }
+    const seen = new Set();
+    const uniqueDirs = [];
+    for (const d of allDirs) {
+      if (!seen.has(d.name)) { seen.add(d.name); uniqueDirs.push(d); }
+    }
+
+    const results = uniqueDirs.map(d => {
+      const logsDir = path.join(d.brainDir, d.name, '.system_generated', 'logs');
+      const artifactDir = path.join(d.brainDir, d.name);
+      let lastMod = 0, preview = '', title = '';
+
+      const logCandidates = ['overview.txt', 'transcript.jsonl', 'transcript_full.jsonl'];
+      for (const fname of logCandidates) {
+        if (preview) break;
+        const fp = path.join(logsDir, fname);
         try {
-          const stat = fs.statSync(overviewPath);
-          lastMod = stat.mtimeMs;
-          const content = fs.readFileSync(overviewPath, 'utf8');
-          const lines = content.split('\n').filter(l => l.trim());
-          // Parse first user message for preview
+          if (!fs.existsSync(fp)) continue;
+          const stat = fs.statSync(fp);
+          if (!lastMod || stat.mtimeMs > lastMod) lastMod = stat.mtimeMs;
+          const raw = fs.readFileSync(fp, 'utf8');
+          const lines = raw.split('\n').filter(l => l.trim()).slice(0, 30);
           for (const line of lines) {
             try {
               const entry = JSON.parse(line);
-              if (entry.type === 'USER_INPUT' && entry.content) {
+              if (!preview && entry.type === 'USER_INPUT' && entry.content) {
                 preview = extractUserRequest(entry.content);
-                break;
-              }
-            } catch {}
-          }
-          // Get agent's first response for title
-          for (const line of lines) {
-            try {
-              const entry = JSON.parse(line);
-              if (entry.source === 'MODEL' && entry.content) {
-                title = entry.content.split('\n')[0].substring(0, 100);
-                break;
               }
             } catch {}
           }
         } catch {}
-        const cachedTitle = (global._convTitleCache || {})[d.name];
-        const workspace = detectWorkspace(d.name);
-        return { id: d.name, lastMod, preview, title: cachedTitle || title, path: artifactDir, workspace, workspaceLabel: getWorkspaceLabel(workspace), workspaceColor: getWorkspaceColor(workspace) };
-      })
-      .sort((a, b) => b.lastMod - a.lastMod)
-      .slice(0, 50);
-    return dirs;
+      }
+
+      title = preview ? preview.split('\n')[0].substring(0, 100) : '';
+      const cachedTitle = (global._convTitleCache || {})[d.name];
+      const workspace = detectWorkspace(d.name);
+      return {
+        id: d.name, lastMod, preview,
+        title: cachedTitle || title,
+        path: artifactDir, workspace,
+        workspaceLabel: getWorkspaceLabel(workspace),
+        workspaceColor: getWorkspaceColor(workspace),
+      };
+    })
+    .sort((a, b) => b.lastMod - a.lastMod)
+    .slice(0, 50);
+    return results;
   } catch { return []; }
 }
 
@@ -522,77 +551,79 @@ function parseLogLine(line, state = { currentModel: 'Agent' }) {
 }
 
 function getConversationLog(convId) {
-  const logsDir = path.join(BRAIN_DIR, convId, '.system_generated', 'logs');
-  const candidates = [
-    path.join(logsDir, 'overview.txt'),
-    path.join(logsDir, 'transcript.jsonl'),
-    path.join(logsDir, 'transcript_full.jsonl'),
-  ];
-  for (const logPath of candidates) {
-    try {
-      if (!fs.existsSync(logPath)) continue;
-      const raw = fs.readFileSync(logPath, 'utf8');
-      const lines = raw.split('\n').filter(l => l.trim());
-      let initialModel = 'Agent';
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          if (entry.content && entry.content.includes('<USER_SETTINGS_CHANGE>')) {
-            const m = entry.content.match(/from (.*?) to (.*?)\. No need/);
-            if (m && m[1] && m[1] !== 'None') {
-              initialModel = m[1];
-              break;
+  for (const brainDir of BRAIN_DIRS) {
+    const logsDir = path.join(brainDir, convId, '.system_generated', 'logs');
+    const candidates = [
+      path.join(logsDir, 'overview.txt'),
+      path.join(logsDir, 'transcript.jsonl'),
+      path.join(logsDir, 'transcript_full.jsonl'),
+    ];
+    for (const logPath of candidates) {
+      try {
+        if (!fs.existsSync(logPath)) continue;
+        const raw = fs.readFileSync(logPath, 'utf8');
+        const lines = raw.split('\n').filter(l => l.trim());
+        let initialModel = 'Agent';
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line);
+            if (entry.content && entry.content.includes('<USER_SETTINGS_CHANGE>')) {
+              const m = entry.content.match(/from (.*?) to (.*?)\\. No need/);
+              if (m && m[1] && m[1] !== 'None') { initialModel = m[1]; break; }
             }
-          }
-        } catch {}
-      }
-      const state = { currentModel: initialModel };
-      const parsed = lines.map(l => parseLogLine(l, state)).filter(Boolean);
-      if (parsed.length > 0) return parsed.join('\n---\n\n');
-    } catch {}
+          } catch {}
+        }
+        const state = { currentModel: initialModel };
+        const parsed = lines.map(l => parseLogLine(l, state)).filter(Boolean);
+        if (parsed.length > 0) return parsed.join('\n---\n\n');
+      } catch {}
+    }
   }
   return 'Log not found.';
 }
 
 function getArtifacts(convId) {
-  const artDir = path.join(BRAIN_DIR, convId);
-  const artifacts = [];
-  try {
-    const files = fs.readdirSync(artDir);
-    for (const f of files) {
-      if (f.startsWith('.')) continue;
-      const ext = path.extname(f).toLowerCase();
-      const fp = path.join(artDir, f);
-      try {
-        const stat = fs.statSync(fp);
-        if (!stat.isFile()) continue;
-        if (['.md', '.txt', '.json'].includes(ext) && stat.size < 500000) {
-          const content = fs.readFileSync(fp, 'utf8');
-          artifacts.push({ name: f, size: stat.size, modified: stat.mtimeMs, content: content.substring(0, 5000), type: 'text' });
-        } else if (['.png', '.webp', '.jpg', '.jpeg'].includes(ext)) {
-          artifacts.push({ name: f, size: stat.size, modified: stat.mtimeMs, content: `[Image: ${(stat.size/1024).toFixed(1)}KB]`, type: 'image' });
-        }
-      } catch {}
-    }
-    // Subdirectories
-    for (const sub of ['browser', 'scratch']) {
-      const subDir = path.join(artDir, sub);
-      if (!fs.existsSync(subDir)) continue;
-      try {
-        for (const sf of fs.readdirSync(subDir)) {
-          if (sf.startsWith('.') || !sf.endsWith('.md')) continue;
-          const fp = path.join(subDir, sf);
+  for (const brainDir of BRAIN_DIRS) {
+    const artDir = path.join(brainDir, convId);
+    if (!fs.existsSync(artDir)) continue;
+    const artifacts = [];
+    try {
+      const files = fs.readdirSync(artDir);
+      for (const f of files) {
+        if (f.startsWith('.')) continue;
+        const ext = path.extname(f).toLowerCase();
+        const fp = path.join(artDir, f);
+        try {
           const stat = fs.statSync(fp);
-          if (stat.isFile() && stat.size > 0 && stat.size < 500000) {
+          if (!stat.isFile()) continue;
+          if (['.md', '.txt', '.json'].includes(ext) && stat.size < 500000) {
             const content = fs.readFileSync(fp, 'utf8');
-            artifacts.push({ name: `${sub}/${sf}`, size: stat.size, modified: stat.mtimeMs, content: content.substring(0, 5000), type: 'text' });
+            artifacts.push({ name: f, size: stat.size, modified: stat.mtimeMs, content: content.substring(0, 5000), type: 'text' });
+          } else if (['.png', '.webp', '.jpg', '.jpeg'].includes(ext)) {
+            artifacts.push({ name: f, size: stat.size, modified: stat.mtimeMs, content: `[Image: ${(stat.size/1024).toFixed(1)}KB]`, type: 'image' });
           }
-        }
-      } catch {}
-    }
-    artifacts.sort((a, b) => b.modified - a.modified);
-  } catch {}
-  return artifacts;
+        } catch {}
+      }
+      for (const sub of ['browser', 'scratch']) {
+        const subDir = path.join(artDir, sub);
+        if (!fs.existsSync(subDir)) continue;
+        try {
+          for (const sf of fs.readdirSync(subDir)) {
+            if (sf.startsWith('.') || !sf.endsWith('.md')) continue;
+            const fp = path.join(subDir, sf);
+            const stat = fs.statSync(fp);
+            if (stat.isFile() && stat.size > 0 && stat.size < 500000) {
+              const content = fs.readFileSync(fp, 'utf8');
+              artifacts.push({ name: `${sub}/${sf}`, size: stat.size, modified: stat.mtimeMs, content: content.substring(0, 5000), type: 'text' });
+            }
+          }
+        } catch {}
+      }
+      artifacts.sort((a, b) => b.modified - a.modified);
+      if (artifacts.length > 0) return artifacts;
+    } catch {}
+  }
+  return [];
 }
 
 // File watcher for live updates
@@ -618,30 +649,24 @@ let _lastActiveConvId = null;
 let _lastActiveTime = 0;
 let _activePerWorkspace = {};
 function startGlobalBrainWatcher() {
-  try {
-    // Watch the brain directory recursively for any overview.txt changes
-    fs.watch(BRAIN_DIR, { recursive: true }, (event, filename) => {
-      if (!filename || !filename.includes('overview.txt')) return;
-      // Extract conversation ID from path: <convId>/.system_generated/logs/overview.txt
-      const parts = filename.split(path.sep);
-      if (parts.length >= 1) {
-        const convId = parts[0];
-        if (convId && convId.match(/^[a-f0-9]{8}-/)) {
-          _lastActiveConvId = convId;
-          _lastActiveTime = Date.now();
-          const ws = detectWorkspace(convId);
-          if (ws) { _activePerWorkspace[ws] = { convId, time: Date.now() }; }
+  for (const brainDir of BRAIN_DIRS) {
+    try {
+      fs.watch(brainDir, { recursive: true }, (event, filename) => {
+        if (!filename) return;
+        const parts = filename.split(path.sep);
+        if (parts.length > 0 && global._workspaceCache) {
+          delete global._workspaceCache[parts[0]];
         }
-      }
-    });
-    console.log('  Global brain watcher started');
-  } catch (e) {
-    console.log('  Warning: Global brain watcher failed:', e.message);
+        const data = JSON.stringify({ type: 'brain_update', event, filename, timestamp: Date.now() });
+        for (const client of sseClients) {
+          client.write(`data: ${data}\n\n`);
+        }
+      });
+    } catch {}
   }
+  console.log('  Global brain watcher started');
 }
-startGlobalBrainWatcher();
 
-// Serve the HTML UI
 function serveHTML(res) {
   const htmlPath = path.join(__dirname, 'index.html');
   const html = fs.readFileSync(htmlPath, 'utf8');
